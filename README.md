@@ -6,9 +6,11 @@ It does not use the OpenAI API. It drives the authenticated `chatgpt.com` web UI
 
 ## Commands
 
-- `chatgptcli ask <prompt> [--new] [--timeout <seconds>] [--max-attempts <n>] [--retry-delay-ms <ms>] [-f json|text]`
-- `chatgptcli doctor [--sessions] [--no-live]`
-- `chatgptcli setup`
+- [`chatgptcli ask <prompt> [--new] [--timeout <seconds>] [--max-attempts <n>] [--retry-delay-ms <ms>] [-f json|text]`](docs/ask.md)
+- [`chatgptcli read [chat-url-or-id] [-f json|text]`](docs/read.md)
+- [`chatgptcli switch <chat-url-or-id>`](docs/switch.md)
+- [`chatgptcli doctor [--sessions] [--no-live]`](docs/doctor.md)
+- [`chatgptcli setup`](docs/setup.md)
 
 `chatgptcli ask` includes a built-in retry plan. It reuses the `site:chatgpt` browser session, falls back to a fresh chat on retry, and returns JSON by default for agent consumption.
 
