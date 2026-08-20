@@ -1,14 +1,18 @@
-// In-page script evaluated via the Browser Bridge (page.evaluate) to scrape a
-// chatgpt.com chat. Exported as a string, not a function: it runs as JS source
-// inside the browser tab, not in this Node process.
+// In-page scripts evaluated via the Browser Bridge (page.evaluate /
+// page.evaluateInFrame) to scrape a chatgpt.com chat. Exported as strings,
+// not functions: they run as JS source inside the browser tab (or inside a
+// cross-origin iframe), not in this Node process.
 //
 // ponytail: the DOM->markdown mapping below covers the tag set ChatGPT
 // currently emits in Deep Research reports (headings, paragraphs, lists,
 // tables, mermaid pre-blocks). Widen only when a new tag shows up in a real
 // report — see docs/INLINE_DOCUMENTS.md for the full contract.
-export const READ_SCRAPE_SCRIPT = `(() => {
-  const MESSAGE_ATTR = 'data-message-author-role';
-  const REPORT_CLASS_PART = '_reportPage_';
+//
+// Shared serializer functions, embedded (string concat, not import) into
+// both READ_SCRAPE_SCRIPT and REPORT_FRAME_SCRIPT below — each script is a
+// standalone source string evaluated in a different page/frame context, so
+// there is no module system to share them through.
+const SERIALIZE_HELPERS = `
   const NL = String.fromCharCode(10);
   const FENCE = String.fromCharCode(96, 96, 96);
 
@@ -78,20 +82,46 @@ export const READ_SCRAPE_SCRIPT = `(() => {
     const markdown = serializeChildren(node).replace(/\\n{3,}/g, NL + NL).trim();
     return { title, markdown };
   }
+`;
 
+// Top-frame scrape: walks message turns plus any legacy inline
+// `_reportPage_` report container. Deep Research reports now render inside a
+// cross-origin sandboxed iframe (title="internal://deep-research") instead —
+// the top frame cannot read across that boundary (page.evaluate runs here,
+// not in the iframe's own context), so a report iframe is emitted as an
+// ordered placeholder ({ reportFrameSrc, text: '' }) for read.js to resolve
+// via page.frames() + page.evaluateInFrame(). See docs/INLINE_DOCUMENTS.md.
+export const READ_SCRAPE_SCRIPT = `(() => {
+  const MESSAGE_ATTR = 'data-message-author-role';
+  const REPORT_CLASS_PART = '_reportPage_';
+  const REPORT_FRAME_TITLE = 'internal://deep-research';
+${SERIALIZE_HELPERS}
   const nodes = Array.from(document.querySelectorAll(
-    '[' + MESSAGE_ATTR + '], [class*="' + REPORT_CLASS_PART + '"]'
+    '[' + MESSAGE_ATTR + '], [class*="' + REPORT_CLASS_PART + '"], iframe[title="' + REPORT_FRAME_TITLE + '"]'
   ));
 
   const entries = nodes.map((node) => {
     if (node.hasAttribute(MESSAGE_ATTR)) {
       return { role: node.getAttribute(MESSAGE_ATTR), text: textOf(node).trim(), title: '' };
     }
+    if (node.tagName === 'IFRAME') {
+      return { role: 'report', text: '', title: '', reportFrameSrc: node.src || '' };
+    }
     if (node.closest('[' + MESSAGE_ATTR + ']')) return null;
     if (node.parentElement && node.parentElement.closest('[class*="' + REPORT_CLASS_PART + '"]')) return null;
     const report = serializeReport(node);
     return report.markdown ? { role: 'report', text: report.markdown, title: report.title } : null;
-  }).filter((entry) => entry && entry.text);
+  }).filter((entry) => entry && (entry.text || entry.reportFrameSrc));
 
   return { url: location.href, messages: entries };
+})()`;
+
+// Evaluated inside the deep-research report iframe itself (via
+// page.evaluateInFrame) to serialize the report body. The whole frame
+// document IS the report, so the root is `main` if present, else `body`.
+export const REPORT_FRAME_SCRIPT = `(() => {
+${SERIALIZE_HELPERS}
+  const root = document.querySelector('main') || document.body;
+  const report = serializeReport(root);
+  return { title: report.title, text: report.markdown };
 })()`;

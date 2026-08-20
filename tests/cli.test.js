@@ -6,13 +6,13 @@ import { runCli } from '../src/cli.js';
 import { __resetAskDepsForTest, __setAskDepsForTest, __test__ as askHelpers } from '../src/commands/ask.js';
 import { __resetExecRunnerForTest, __setExecRunnerForTest } from '../src/core/opencli.js';
 import { __resetSetupDepsForTest, __setSetupDepsForTest } from '../src/commands/setup.js';
+import { __resetReadDepsForTest, __setReadDepsForTest } from '../src/commands/read.js';
+import { bindOriginalStdio, captureStderr, captureStdout, fakeReadPage, restoreStdio } from './test_helpers.js';
 
-const originalStdoutWrite = process.stdout.write.bind(process.stdout);
-const originalStderrWrite = process.stderr.write.bind(process.stderr);
+const originalStdio = bindOriginalStdio();
 
 beforeEach(() => {
-  process.stdout.write = originalStdoutWrite;
-  process.stderr.write = originalStderrWrite;
+  restoreStdio(originalStdio);
   __resetAskDepsForTest();
   __resetExecRunnerForTest();
   __resetSetupDepsForTest();
@@ -20,38 +20,12 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-  process.stdout.write = originalStdoutWrite;
-  process.stderr.write = originalStderrWrite;
+  restoreStdio(originalStdio);
   __resetAskDepsForTest();
   __resetExecRunnerForTest();
   __resetSetupDepsForTest();
   __resetReadDepsForTest();
 });
-
-function fakeReadPage(evaluateResult) {
-  return {
-    bridge: { close: async () => {} },
-    page: { evaluate: async () => evaluateResult }
-  };
-}
-
-function captureStdout() {
-  const chunks = [];
-  process.stdout.write = (data) => {
-    chunks.push(String(data));
-    return true;
-  };
-  return chunks;
-}
-
-function captureStderr() {
-  const chunks = [];
-  process.stderr.write = (data) => {
-    chunks.push(String(data));
-    return true;
-  };
-  return chunks;
-}
 
 describe('cli', () => {
   test('ask returns structured success output', async () => {
@@ -132,6 +106,82 @@ describe('cli', () => {
 
     expect(code).toBe(0);
     expect(stdout.join('')).toBe('[report]\n# T\n\nBody\n');
+  });
+
+  test('read resolves a deep research report rendered in a cross-origin iframe', async () => {
+    const frameCalls = [];
+    __setReadDepsForTest({
+      openChat: async () => fakeReadPage(
+        {
+          url: 'https://chatgpt.com/c/abc',
+          messages: [
+            { role: 'user', text: 'Research X', title: '' },
+            {
+              role: 'report',
+              text: '',
+              title: '',
+              reportFrameSrc: 'https://connector-openai-deep-research.web-sandbox.oaiusercontent.com/r1'
+            }
+          ]
+        },
+        {
+          frames: async () => [
+            { index: 0, frameId: 'f0', url: 'https://connector-openai-deep-research.web-sandbox.oaiusercontent.com/r1', name: '' }
+          ],
+          evaluateInFrame: async (script, frameIndex) => {
+            frameCalls.push(frameIndex);
+            return { title: 'Report Title', text: '# Report Title\n\nBody text.' };
+          }
+        }
+      )
+    });
+
+    const stdout = captureStdout();
+    const code = await runCli(['read', 'abc', '-f', 'json']);
+
+    expect(code).toBe(0);
+    expect(frameCalls).toEqual([0]);
+    const output = JSON.parse(stdout.join(''));
+    expect(output.count).toBe(2);
+    expect(output.messages[1]).toEqual({
+      role: 'report',
+      title: 'Report Title',
+      text: '# Report Title\n\nBody text.'
+    });
+  });
+
+  test('read drops iframe placeholders that resolve to chrome UI, not the report body', async () => {
+    __setReadDepsForTest({
+      openChat: async () => fakeReadPage(
+        {
+          url: 'https://chatgpt.com/c/abc',
+          messages: [
+            { role: 'user', text: 'Research X', title: '' },
+            {
+              role: 'report',
+              text: '',
+              title: '',
+              reportFrameSrc: 'https://connector-openai-deep-research.web-sandbox.oaiusercontent.com/toolbar'
+            }
+          ]
+        },
+        {
+          frames: async () => [
+            { index: 0, frameId: 'f0', url: 'https://connector-openai-deep-research.web-sandbox.oaiusercontent.com/toolbar', name: '' }
+          ],
+          // No heading in this frame (it's the title/status chrome, not the report body).
+          evaluateInFrame: async () => ({ title: '', text: 'Research completed in 11m' })
+        }
+      )
+    });
+
+    const stdout = captureStdout();
+    const code = await runCli(['read', 'abc', '-f', 'json']);
+
+    expect(code).toBe(0);
+    const output = JSON.parse(stdout.join(''));
+    expect(output.count).toBe(1);
+    expect(output.messages).toEqual([{ role: 'user', text: 'Research X' }]);
   });
 
   test('read without a report stays byte-identical to the plain message shape', async () => {
