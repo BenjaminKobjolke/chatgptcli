@@ -1,0 +1,12 @@
+{
+  "version": "0.1.3",
+  "build": 3,
+  "date": "2026-08-20",
+  "title": "Deep Research reports and Files-in-chat support",
+  "notes": [
+    "Read Deep Research reports and generated files via the 'Files in chat' panel",
+    "Externalized scraping script for the read command with a defined scrubbing contract",
+    "Animation configuration support",
+    "New debugging guide for automating against live ChatGPT"
+  ]
+}
