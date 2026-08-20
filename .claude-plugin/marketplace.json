@@ -1,0 +1,11 @@
+{
+  "name": "chatgptcli",
+  "owner": { "name": "Benjamin Kobjolke" },
+  "plugins": [
+    {
+      "name": "chatgptcli",
+      "source": "./plugin",
+      "description": "Read ChatGPT chats and ask ChatGPT via your logged-in browser session"
+    }
+  ]
+}
