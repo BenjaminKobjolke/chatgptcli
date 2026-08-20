@@ -1,8 +1,29 @@
 import { AppError, ERROR_CODE, EXIT_CODE } from '../core/errors.js';
 import { connectBridge, loadBrowserBridge } from '../core/opencli.js';
 import { resolveBridgeProfile } from '../core/settings.js';
+import { READ_SCRAPE_SCRIPT } from './read_scrape.js';
 
 const MESSAGE_SELECTOR = '[data-message-author-role]';
+
+let openChatImpl = openChat;
+
+export function __setReadDepsForTest(deps) {
+  if (deps.openChat) {
+    openChatImpl = deps.openChat;
+  }
+}
+
+export function __resetReadDepsForTest() {
+  openChatImpl = openChat;
+}
+
+function normalizeEntry(value) {
+  const object = value && typeof value === 'object' ? value : {};
+  const role = typeof object.role === 'string' ? object.role : '';
+  const text = typeof object.text === 'string' ? object.text : '';
+  const title = typeof object.title === 'string' ? object.title : '';
+  return title ? { role, text, title } : { role, text };
+}
 
 export function normalizeChatUrl(target) {
   if (!target) return null;
@@ -52,7 +73,7 @@ async function openChat(input) {
 }
 
 export async function runSwitch(input) {
-  const { bridge, page } = await openChat(input);
+  const { bridge, page } = await openChatImpl(input);
 
   try {
     const url = await page.evaluate('window.location.href');
@@ -66,22 +87,14 @@ export async function runSwitch(input) {
 }
 
 export async function runRead(input) {
-  const { bridge, page } = await openChat(input);
+  const { bridge, page } = await openChatImpl(input);
 
   try {
-    const result = await page.evaluate(`(() => {
-      return {
-        url: location.href,
-        messages: Array.from(document.querySelectorAll(${JSON.stringify(MESSAGE_SELECTOR)}))
-          .map((node) => ({
-            role: node.getAttribute('data-message-author-role'),
-            text: (node instanceof HTMLElement ? node.innerText : node?.textContent || '').trim()
-          }))
-          .filter((message) => message.text)
-      };
-    })()`);
+    const result = await page.evaluate(READ_SCRAPE_SCRIPT);
 
-    const messages = Array.isArray(result?.messages) ? result.messages : [];
+    const messages = Array.isArray(result?.messages)
+      ? result.messages.map(normalizeEntry).filter((message) => message.text)
+      : [];
 
     if (input.format === 'text') {
       return {
