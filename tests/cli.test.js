@@ -107,7 +107,7 @@ describe('cli', () => {
 
     expect(code).toBe(0);
     expect(stdout.join('')).toContain('[OK] Bun available (1.3.5)');
-    expect(stdout.join('')).toContain('scripts/launch-chatgpt-browser.sh');
+    expect(stdout.join('')).toContain('chatgptcli launch');
   });
 
   test('setup rejects unknown options', async () => {
