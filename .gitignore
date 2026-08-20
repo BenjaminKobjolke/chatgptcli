@@ -9,3 +9,4 @@ claude-plans/
 tools/analyze_code_config.bat
 code_analysis_results/
 /*.bun-build
+coding-rules.json
