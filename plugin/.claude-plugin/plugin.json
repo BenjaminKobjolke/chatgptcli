@@ -1,4 +1,4 @@
-﻿{
+{
     "name":  "chatgptcli",
     "description":  "Read ChatGPT chats and ask ChatGPT via your logged-in browser session",
     "version":  "0.1.3"

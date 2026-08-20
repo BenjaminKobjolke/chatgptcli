@@ -22,7 +22,7 @@ if "%VERSION%"=="" (
 
 rem Keep the Claude plugin manifest version in sync with package.json -
 rem "claude plugin update" reads plugin.json, not package.json
-powershell -NoProfile -Command "$m = 'plugin/.claude-plugin/plugin.json'; $j = Get-Content $m -Raw -Encoding UTF8 | ConvertFrom-Json; if ($j.version -ne '%VERSION%') { $j.version = '%VERSION%'; $j | ConvertTo-Json | Set-Content $m -Encoding UTF8; Write-Host ('[OK] plugin.json version -> %VERSION%') }"
+powershell -NoProfile -Command "$m = 'plugin/.claude-plugin/plugin.json'; $j = Get-Content $m -Raw -Encoding UTF8 | ConvertFrom-Json; if ($j.version -ne '%VERSION%') { $j.version = '%VERSION%'; [IO.File]::WriteAllText((Resolve-Path $m), ($j | ConvertTo-Json), [Text.UTF8Encoding]::new($false)); Write-Host ('[OK] plugin.json version -> %VERSION%') }"
 
 for /f "delims=" %%l in ('call "%~dp0version_get.bat"') do set LABEL=%%l
 if "%LABEL%"=="" (
