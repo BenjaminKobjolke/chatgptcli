@@ -6,3 +6,6 @@ chatgptcli.exe
 claude-plans/
 # Ignore agent planning directories
 claude-plans/
+tools/analyze_code_config.bat
+code_analysis_results/
+/*.bun-build
