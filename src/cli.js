@@ -5,6 +5,7 @@ import { runDoctor } from './commands/doctor.js';
 import { runSetup } from './commands/setup.js';
 import { runLaunch, runSetChrome, runSwitchSession } from './commands/chrome.js';
 import { parseAskArgs, parseDoctorArgs, parseReadArgs, parseSetChromeArgs, parseSetupArgs, parseSwitchArgs } from './cli_args.js';
+import { checkMinVersion } from './core/min_version.js';
 import pkg from '../package.json';
 
 const VERSION = pkg.version;
@@ -23,6 +24,13 @@ export async function runCli(argv) {
   }
 
   try {
+    // --help/--version above stay usable on a stale exe so the update flow can verify.
+    const updateMessage = checkMinVersion(VERSION);
+    if (updateMessage) {
+      writeStderr(updateMessage);
+      return EXIT_CODE.UPDATE_REQUIRED;
+    }
+
     if (command === 'ask') {
       const result = await runAsk(parseAskArgs(argv.slice(1)));
       writeStdout(result.output);

@@ -21,6 +21,14 @@ tools\build_decrement.bat    # -1 (undo)
 
 Bump the semver in `package.json` by hand only for feature/breaking releases — the GitHub tag is `v<version>`, and `gh` fails if the tag already exists. The Claude plugin manifest (`plugin/.claude-plugin/plugin.json`) is synced to the `package.json` version automatically by the release bat — `claude plugin update` reads that file, so a stale value there makes updates report "already at the latest version".
 
+### Min exe version
+
+The exe self-checks `plugin/skills/chatgptcli/min_exe_version.txt` on every start (shipped with the plugin, found via the Claude plugin cache) and reports `UPDATE_REQUIRED` (exit 7) when it is older — that is what makes users re-download the exe. Hand-maintained, no bat sync. **When to update it:**
+
+- Release contains `src/` changes the skill depends on (new command/flag/output the skill uses, changed output format, bug fix the skill needs) → bump the semver in `package.json` AND write that same semver into the min-version file. Installed exes older than it will self-report `UPDATE_REQUIRED` and get re-downloaded.
+- Release is skill-only, docs-only, or the exe change is backward compatible for the skill → leave the min-version file untouched. Users keep their working exe; no forced 116 MB re-download.
+- Never set it higher than the `package.json` semver being released — the freshly downloaded "latest" exe must satisfy it, or every user loops on `UPDATE_REQUIRED`.
+
 ## 3. Create the release notes
 
 Create `release-notes/<label>/en.json`, where `<label>` is the output of `tools\version_get.bat`:

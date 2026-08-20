@@ -173,6 +173,44 @@ describe('cli', () => {
     expect(code).toBe(2);
     expect(stderr.join('')).toContain('Unsupported format');
   });
+
+  async function withStaleMinVersion(fn) {
+    const dir = mkdtempSync(join(tmpdir(), 'chatgptcli-minver-cli-'));
+    writeFileSync(join(dir, 'min_exe_version.txt'), '9.9.9');
+    const savedEnvFile = process.env.CHATGPTCLI_MIN_VERSION_FILE;
+    process.env.CHATGPTCLI_MIN_VERSION_FILE = join(dir, 'min_exe_version.txt');
+
+    try {
+      await fn();
+    } finally {
+      if (savedEnvFile === undefined) {
+        delete process.env.CHATGPTCLI_MIN_VERSION_FILE;
+      } else {
+        process.env.CHATGPTCLI_MIN_VERSION_FILE = savedEnvFile;
+      }
+      rmSync(dir, { recursive: true, force: true });
+    }
+  }
+
+  test('command exits 7 with UPDATE_REQUIRED when exe is older than required minimum', async () => {
+    await withStaleMinVersion(async () => {
+      const stderr = captureStderr();
+      const code = await runCli(['ask', 'hello']);
+
+      expect(code).toBe(7);
+      expect(stderr.join('')).toContain('UPDATE_REQUIRED');
+    });
+  });
+
+  test('--version still works when exe is older than required minimum', async () => {
+    await withStaleMinVersion(async () => {
+      const stdout = captureStdout();
+      const code = await runCli(['--version']);
+
+      expect(code).toBe(0);
+      expect(stdout.join('')).toMatch(/^\d+\.\d+\.\d+/);
+    });
+  });
 });
 
 describe('ask helpers', () => {

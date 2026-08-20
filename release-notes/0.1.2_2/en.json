@@ -1,0 +1,11 @@
+{
+  "version": "0.1.2",
+  "build": 2,
+  "date": "2026-08-20",
+  "title": "Automatic exe update detection",
+  "notes": [
+    "The exe now self-checks the plugin's minimum required version on every start and reports UPDATE_REQUIRED (exit code 7) with update instructions when it is outdated.",
+    "The Claude skill detects UPDATE_REQUIRED and re-downloads the exe automatically after a plugin update.",
+    "Release build script can skip the interactive exe-upload prompt (pass Y or N) and keeps the plugin manifest version in sync automatically."
+  ]
+}
