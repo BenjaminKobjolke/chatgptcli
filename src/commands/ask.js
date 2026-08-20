@@ -107,7 +107,7 @@ async function runBrowserAsk(input) {
   try {
     const page = await bridge.connect({
       timeout: Math.max(30, input.timeoutSeconds),
-      workspace: 'site:chatgpt'
+      session: 'site:chatgpt'
     });
 
     return await askOnPage(page, {
@@ -342,7 +342,7 @@ function normalizeSurfaceState(value) {
     editorFound: Boolean(object.editorFound),
     sendFound: Boolean(object.sendFound),
     sendDisabled: Boolean(object.sendDisabled),
-    editorReady: Boolean(object.editorFound) && Boolean(object.sendFound),
+    editorReady: Boolean(object.editorFound),
     loginLike: Boolean(object.loginLike),
     challengeLike: Boolean(object.challengeLike)
   };
