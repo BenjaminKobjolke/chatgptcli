@@ -5,6 +5,8 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { AppError, ERROR_CODE } from './errors.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
+// Compiled exes report a virtual bunfs path (B:/~BUN/... on Windows, /$bunfs/ on POSIX).
+export const IS_COMPILED = typeof Bun !== 'undefined' && (Bun.main.includes('~BUN') || Bun.main.includes('$bunfs'));
 export const OPENCLI_ENV = {
   ROOT: 'CHATGPTCLI_OPENCLI_ROOT',
   MAIN: 'CHATGPTCLI_OPENCLI_MAIN'
@@ -105,9 +107,14 @@ export function captureOpenCli(args) {
 }
 
 export async function loadBrowserBridge() {
-  const { browserIndexPath } = ensureOpenCliReady();
-  const moduleUrl = pathToFileURL(browserIndexPath).href;
-  const mod = await import(moduleUrl);
+  let mod;
+  if (IS_COMPILED) {
+    // Literal specifier so `bun build --compile` bundles the bridge and its deps into the exe.
+    mod = await import('../../.omx/reference/opencli/dist/src/browser/index.js');
+  } else {
+    const { browserIndexPath } = ensureOpenCliReady();
+    mod = await import(pathToFileURL(browserIndexPath).href);
+  }
 
   if (typeof mod.BrowserBridge !== 'function') {
     throw new AppError(ERROR_CODE.CONFIG_INVALID, 'opencli BrowserBridge export is missing.', {
@@ -115,5 +122,18 @@ export async function loadBrowserBridge() {
     });
   }
 
-  return { BrowserBridge: mod.BrowserBridge };
+  return { BrowserBridge: mod.BrowserBridge, getDaemonHealth: mod.getDaemonHealth };
+}
+
+export async function connectBridge(bridge, opts) {
+  try {
+    return await bridge.connect(opts);
+  } catch (error) {
+    if (String(error?.message).includes('Multiple Browser Bridge profiles')) {
+      throw new AppError(ERROR_CODE.CONFIG_INVALID, error.message, {
+        hint: 'Run: chatgptcli switch-session'
+      });
+    }
+    throw error;
+  }
 }

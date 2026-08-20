@@ -57,7 +57,7 @@ export function runSetup() {
   if (!extensionExists) {
     lines.push(`- Ensure Browser Bridge extension exists at "${extensionPath}".`);
   }
-  lines.push('- Launch dedicated browser profile: `scripts/launch-chatgpt-browser.sh`.');
+  lines.push('- Launch dedicated browser profile: `chatgptcli launch` (configure via `chatgptcli set-chrome <exe> [--profile <dir>]`).');
   lines.push('- In that browser, complete one-time login at `https://chatgpt.com/`.');
   lines.push(`- Reuse existing Chrome profile option: load unpacked extension from "${extensionPath}".`);
   lines.push('- Verify end-to-end: `bun run src/main.js ask "hello"`.');

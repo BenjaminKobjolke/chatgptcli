@@ -1,5 +1,6 @@
 import { AppError, ERROR_CODE, EXIT_CODE } from '../core/errors.js';
-import { loadBrowserBridge } from '../core/opencli.js';
+import { connectBridge, loadBrowserBridge } from '../core/opencli.js';
+import { resolveBridgeProfile } from '../core/settings.js';
 
 const CHATGPT_URL = 'https://chatgpt.com/';
 const EDITOR_SELECTOR = '.ProseMirror[role="textbox"]';
@@ -105,9 +106,10 @@ async function runBrowserAsk(input) {
   const bridge = new BrowserBridge();
 
   try {
-    const page = await bridge.connect({
+    const page = await connectBridge(bridge, {
       timeout: Math.max(30, input.timeoutSeconds),
-      session: 'site:chatgpt'
+      session: 'site:chatgpt',
+      preferredContextId: resolveBridgeProfile()
     });
 
     return await askOnPage(page, {

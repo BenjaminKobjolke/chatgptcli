@@ -1,5 +1,6 @@
 import { AppError, ERROR_CODE, EXIT_CODE } from '../core/errors.js';
-import { loadBrowserBridge } from '../core/opencli.js';
+import { connectBridge, loadBrowserBridge } from '../core/opencli.js';
+import { resolveBridgeProfile } from '../core/settings.js';
 
 const MESSAGE_SELECTOR = '[data-message-author-role]';
 
@@ -30,7 +31,11 @@ export function normalizeChatUrl(target) {
 async function openChat(input) {
   const { BrowserBridge } = await loadBrowserBridge();
   const bridge = new BrowserBridge();
-  const page = await bridge.connect({ timeout: 30, session: 'site:chatgpt' });
+  const page = await connectBridge(bridge, {
+    timeout: 30,
+    session: 'site:chatgpt',
+    preferredContextId: resolveBridgeProfile()
+  });
 
   if (input.url) {
     await page.goto(input.url, { settleMs: 1500 });

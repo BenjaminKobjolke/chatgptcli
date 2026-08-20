@@ -3,6 +3,7 @@ import { runAsk } from './commands/ask.js';
 import { normalizeChatUrl, runRead, runSwitch } from './commands/read.js';
 import { runDoctor } from './commands/doctor.js';
 import { runSetup } from './commands/setup.js';
+import { runLaunch, runSetChrome, runSwitchSession } from './commands/chrome.js';
 
 const VERSION = '0.1.0';
 
@@ -44,6 +45,28 @@ export async function runCli(argv) {
 
     if (command === 'setup') {
       return runSetup(parseSetupArgs(argv.slice(1)));
+    }
+
+    if (command === 'set-chrome') {
+      return runSetChrome(parseSetChromeArgs(argv.slice(1)));
+    }
+
+    if (command === 'switch-session') {
+      if (argv.length > 2 || (argv[1] && argv[1].startsWith('-'))) {
+        throw new AppError(ERROR_CODE.INPUT_INVALID, 'switch-session takes at most one argument.', {
+          hint: 'Usage: chatgptcli switch-session [number|contextId|none]'
+        });
+      }
+      return await runSwitchSession({ pick: argv[1] });
+    }
+
+    if (command === 'launch') {
+      if (argv.length > 1) {
+        throw new AppError(ERROR_CODE.INPUT_INVALID, `Unknown option: ${argv[1]}`, {
+          hint: 'launch does not take options.'
+        });
+      }
+      return runLaunch();
     }
 
     throw new AppError(ERROR_CODE.INPUT_INVALID, `Unknown command: ${command}`, {
@@ -225,6 +248,40 @@ function parseSetupArgs(args) {
   return {};
 }
 
+function parseSetChromeArgs(args) {
+  let executable;
+  let profileDir;
+
+  for (let i = 0; i < args.length; i += 1) {
+    const token = args[i];
+
+    if (token === '--profile') {
+      profileDir = requireValue(args, i, '--profile');
+      i += 1;
+      continue;
+    }
+
+    if (token.startsWith('-')) {
+      throw new AppError(ERROR_CODE.INPUT_INVALID, `Unknown option: ${token}`, {
+        hint: 'Supported options: --profile <dir>.'
+      });
+    }
+
+    if (executable) {
+      throw new AppError(ERROR_CODE.INPUT_INVALID, 'set-chrome takes at most one executable path.');
+    }
+    executable = token;
+  }
+
+  if (!executable && !profileDir) {
+    throw new AppError(ERROR_CODE.INPUT_INVALID, 'Nothing to set.', {
+      hint: 'Usage: chatgptcli set-chrome <path-to-chrome.exe> [--profile <dir>]'
+    });
+  }
+
+  return { executable, profileDir };
+}
+
 function requireValue(args, index, flag) {
   const value = args[index + 1];
   if (!value || value.startsWith('-')) {
@@ -247,6 +304,9 @@ function helpText() {
     '  chatgptcli switch <chat-url-or-id>',
     '  chatgptcli doctor [--sessions] [--no-live]',
     '  chatgptcli setup',
+    '  chatgptcli set-chrome <path-to-chrome.exe> [--profile <dir>]',
+    '  chatgptcli launch',
+    '  chatgptcli switch-session [number|contextId|none]',
     '',
     'Notes:',
     '  ask always uses chatgpt.com web UI, not the OpenAI API.',
