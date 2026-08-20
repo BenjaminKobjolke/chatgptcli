@@ -40,7 +40,7 @@ chatgptcli launch                 # start configured Chrome with the profile dir
 chatgptcli switch-session [n|contextId|none]   # pick the bridge profile
 ```
 
-`launch` adds `--load-extension=<opencli>/extension` only when that directory exists on disk. In the compiled exe without an opencli checkout it prints a note instead — install the OpenCLI extension in Chrome manually (see `docs/BUILD_EXECUTABLE.md`).
+`launch` adds `--load-extension=<opencli>/extension` only when that directory exists on disk. In the compiled exe without an opencli checkout it prints a note instead — install the [OpenCLI extension](https://chromewebstore.google.com/detail/opencli/ildkmabpimmkaediidaifkhjpohdnifk) in Chrome manually (see `docs/BUILD_EXECUTABLE.md`).
 
 ## How a bridge profile is chosen at runtime
 

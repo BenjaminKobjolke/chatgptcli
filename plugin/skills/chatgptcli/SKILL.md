@@ -42,5 +42,5 @@ Notes:
 
 Requires Chrome logged into chatgpt.com plus the opencli Browser Bridge (bundled in the exe).
 
-- Connection / bridge error: run `chatgptcli.exe launch` (starts Chrome with the bridge profile and opens chatgpt.com), then `chatgptcli.exe setup` to verify. Ask the user to log in if needed, then retry.
+- Connection / bridge error: run `chatgptcli.exe launch` (starts Chrome with the bridge profile and opens chatgpt.com), then `chatgptcli.exe setup` to verify. Ask the user to log in if needed, then retry. If the bridge still reports no connection after that, the OpenCLI extension is probably missing — ask the user to install it from the Chrome Web Store (https://chromewebstore.google.com/detail/opencli/ildkmabpimmkaediidaifkhjpohdnifk) in the Chrome profile being used, then retry.
 - Login or CAPTCHA gate reported in output: tell the user to complete login/CAPTCHA in the launched browser window, then retry.

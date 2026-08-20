@@ -23,7 +23,7 @@ Chrome executable, profile dir and bridge-session selection are configured in `~
 
 - Bun
 - Google Chrome / Chromium
-- `opencli` Browser Bridge installed in Chrome/Chromium
+- [`opencli` Browser Bridge extension](https://chromewebstore.google.com/detail/opencli/ildkmabpimmkaediidaifkhjpohdnifk) installed in Chrome/Chromium
 - A browser profile that has already logged into `chatgpt.com` at least once
 
 ## Build Windows Executable
@@ -34,7 +34,7 @@ bun run build
 tools\build.bat
 ```
 
-Produces a single self-contained `chatgptcli.exe` in the repo root — the opencli Browser Bridge is bundled into the exe, so `ask`/`read`/`switch` need no Bun and no opencli checkout at runtime. Copy the exe anywhere or add the repo directory to your PATH. The Chrome extension must still be installed. `doctor` is unavailable in the exe; run it from the repo with `bun run src/main.js doctor`. Details: [docs/BUILD_EXECUTABLE.md](docs/BUILD_EXECUTABLE.md).
+Produces a single self-contained `chatgptcli.exe` in the repo root — the opencli Browser Bridge is bundled into the exe, so `ask`/`read`/`switch` need no Bun and no opencli checkout at runtime. Copy the exe anywhere or add the repo directory to your PATH. The [Chrome extension](https://chromewebstore.google.com/detail/opencli/ildkmabpimmkaediidaifkhjpohdnifk) must still be installed. `doctor` is unavailable in the exe; run it from the repo with `bun run src/main.js doctor`. Details: [docs/BUILD_EXECUTABLE.md](docs/BUILD_EXECUTABLE.md).
 
 ## Claude Code Plugin
 
@@ -50,6 +50,18 @@ Install the skill as a plugin (no clone, no build). This repo is also its own pl
 ```
 
 Then say things like "ask chatgpt what is 2+2", "get the chatgpt chat", or "get the chat for https://chatgpt.com/c/<id>". On first use the skill downloads `chatgptcli.exe` from the latest GitHub release to `~/.chatgptcli/bin/`. Plugin source lives in [`plugin/`](plugin/).
+
+To update the plugin to the latest version (also as `/plugin ...` slash commands in a session):
+
+```
+# 1. Refresh the marketplace (pulls the latest repo commits)
+claude plugin marketplace update
+
+# 2. Update the plugin
+claude plugin update chatgptcli
+```
+
+Skill changes load immediately; for other plugin parts run `/reload-plugins` or restart the session. Note: this updates the skill only — `chatgptcli.exe` is updated separately via new GitHub releases.
 
 To publish a new release with the exe attached (requires `gh` CLI, logged in):
 
