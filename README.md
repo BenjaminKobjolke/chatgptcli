@@ -36,6 +36,27 @@ tools\build.bat
 
 Produces a single self-contained `chatgptcli.exe` in the repo root — the opencli Browser Bridge is bundled into the exe, so `ask`/`read`/`switch` need no Bun and no opencli checkout at runtime. Copy the exe anywhere or add the repo directory to your PATH. The Chrome extension must still be installed. `doctor` is unavailable in the exe; run it from the repo with `bun run src/main.js doctor`. Details: [docs/BUILD_EXECUTABLE.md](docs/BUILD_EXECUTABLE.md).
 
+## Claude Code Plugin
+
+Install the skill as a plugin (no clone, no build). This repo is also its own plugin marketplace, so first add it as a marketplace, then install the plugin from it:
+
+```
+# 1. Add this repo as a marketplace (GitHub shorthand or full URL)
+/plugin marketplace add BenjaminKobjolke/chatgptcli
+/plugin marketplace add https://github.com/BenjaminKobjolke/chatgptcli.git
+
+# 2. Install the plugin from that marketplace
+/plugin install chatgptcli@chatgptcli
+```
+
+Then say things like "ask chatgpt what is 2+2", "get the chatgpt chat", or "get the chat for https://chatgpt.com/c/<id>". On first use the skill downloads `chatgptcli.exe` from the latest GitHub release to `~/.chatgptcli/bin/`. Plugin source lives in [`plugin/`](plugin/).
+
+To publish a new release with the exe attached (requires `gh` CLI, logged in):
+
+```bash
+tools\build_and_create_github_release.bat
+```
+
 ## One-Click Setup Check
 
 Run:
