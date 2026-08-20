@@ -16,6 +16,7 @@ beforeEach(() => {
   __resetAskDepsForTest();
   __resetExecRunnerForTest();
   __resetSetupDepsForTest();
+  __resetReadDepsForTest();
 });
 
 afterEach(() => {
@@ -24,7 +25,15 @@ afterEach(() => {
   __resetAskDepsForTest();
   __resetExecRunnerForTest();
   __resetSetupDepsForTest();
+  __resetReadDepsForTest();
 });
+
+function fakeReadPage(evaluateResult) {
+  return {
+    bridge: { close: async () => {} },
+    page: { evaluate: async () => evaluateResult }
+  };
+}
 
 function captureStdout() {
   const chunks = [];
@@ -83,6 +92,68 @@ describe('cli', () => {
     expect(stdout.join('')).toContain('"attempts": 2');
     expect(stdout.join('')).toContain('"status": "retry"');
     expect(stdout.join('')).toContain('"status": "success"');
+  });
+
+  test('read includes a deep research report entry as markdown', async () => {
+    __setReadDepsForTest({
+      openChat: async () => fakeReadPage({
+        url: 'https://chatgpt.com/c/abc',
+        messages: [
+          { role: 'user', text: 'Research X', title: '' },
+          { role: 'assistant', text: 'One moment.', title: '' },
+          { role: 'report', text: '# Report Title\n\nBody text.', title: 'Report Title' }
+        ]
+      })
+    });
+
+    const stdout = captureStdout();
+    const code = await runCli(['read', 'abc', '-f', 'json']);
+
+    expect(code).toBe(0);
+    const output = JSON.parse(stdout.join(''));
+    expect(output.count).toBe(3);
+    expect(output.messages[2]).toEqual({
+      role: 'report',
+      title: 'Report Title',
+      text: '# Report Title\n\nBody text.'
+    });
+  });
+
+  test('read text format renders a [report] block', async () => {
+    __setReadDepsForTest({
+      openChat: async () => fakeReadPage({
+        url: 'https://chatgpt.com/c/abc',
+        messages: [{ role: 'report', text: '# T\n\nBody', title: 'T' }]
+      })
+    });
+
+    const stdout = captureStdout();
+    const code = await runCli(['read', 'abc', '-f', 'text']);
+
+    expect(code).toBe(0);
+    expect(stdout.join('')).toBe('[report]\n# T\n\nBody\n');
+  });
+
+  test('read without a report stays byte-identical to the plain message shape', async () => {
+    __setReadDepsForTest({
+      openChat: async () => fakeReadPage({
+        url: 'https://chatgpt.com/c/abc',
+        messages: [
+          { role: 'user', text: 'hi', title: '' },
+          { role: 'assistant', text: 'hello', title: '' }
+        ]
+      })
+    });
+
+    const stdout = captureStdout();
+    const code = await runCli(['read', 'abc', '-f', 'json']);
+
+    expect(code).toBe(0);
+    const output = JSON.parse(stdout.join(''));
+    expect(output.messages).toEqual([
+      { role: 'user', text: 'hi' },
+      { role: 'assistant', text: 'hello' }
+    ]);
   });
 
   test('doctor forwards to opencli doctor', async () => {
