@@ -1,11 +1,13 @@
 import { AppError, ERROR_CODE, EXIT_CODE, exitCodeForError, toAppError } from './core/errors.js';
 import { runAsk } from './commands/ask.js';
-import { normalizeChatUrl, runRead, runSwitch } from './commands/read.js';
+import { runRead, runSwitch } from './commands/read.js';
 import { runDoctor } from './commands/doctor.js';
 import { runSetup } from './commands/setup.js';
 import { runLaunch, runSetChrome, runSwitchSession } from './commands/chrome.js';
+import { parseAskArgs, parseDoctorArgs, parseReadArgs, parseSetChromeArgs, parseSetupArgs, parseSwitchArgs } from './cli_args.js';
+import pkg from '../package.json';
 
-const VERSION = '0.1.0';
+const VERSION = pkg.version;
 
 export async function runCli(argv) {
   const command = argv[0];
@@ -82,216 +84,6 @@ export async function runCli(argv) {
   }
 }
 
-function parseAskArgs(args) {
-  const positional = [];
-  let format = 'json';
-  let timeoutSeconds = 120;
-  let newChat = false;
-  let maxAttempts = 5;
-  let retryDelayMs = 1500;
-
-  for (let i = 0; i < args.length; i += 1) {
-    const token = args[i];
-
-    if (!token.startsWith('-')) {
-      positional.push(token);
-      continue;
-    }
-
-    if (token === '--new') {
-      newChat = true;
-      continue;
-    }
-
-    if (token === '--timeout') {
-      const raw = requireValue(args, i, '--timeout');
-      const value = Number(raw);
-      if (!Number.isFinite(value) || value <= 0) {
-        throw new AppError(ERROR_CODE.INPUT_INVALID, 'Invalid --timeout value', {
-          hint: 'Use a positive number of seconds.'
-        });
-      }
-      timeoutSeconds = Math.floor(value);
-      i += 1;
-      continue;
-    }
-
-    if (token === '--max-attempts') {
-      const raw = requireValue(args, i, '--max-attempts');
-      const value = Number(raw);
-      if (!Number.isFinite(value) || value <= 0) {
-        throw new AppError(ERROR_CODE.INPUT_INVALID, 'Invalid --max-attempts value', {
-          hint: 'Use a positive integer like 5.'
-        });
-      }
-      maxAttempts = Math.floor(value);
-      i += 1;
-      continue;
-    }
-
-    if (token === '--retry-delay-ms') {
-      const raw = requireValue(args, i, '--retry-delay-ms');
-      const value = Number(raw);
-      if (!Number.isFinite(value) || value < 0) {
-        throw new AppError(ERROR_CODE.INPUT_INVALID, 'Invalid --retry-delay-ms value', {
-          hint: 'Use a non-negative integer like 1500.'
-        });
-      }
-      retryDelayMs = Math.floor(value);
-      i += 1;
-      continue;
-    }
-
-    if (token === '-f' || token === '--format') {
-      const next = requireValue(args, i, '--format');
-      if (next !== 'json' && next !== 'text') {
-        throw new AppError(ERROR_CODE.INPUT_INVALID, `Unsupported format: ${next}`, {
-          hint: 'Supported formats: json, text.'
-        });
-      }
-      format = next;
-      i += 1;
-      continue;
-    }
-
-    throw new AppError(ERROR_CODE.INPUT_INVALID, `Unknown option: ${token}`, {
-      hint: 'Supported options: --new, --timeout, --max-attempts, --retry-delay-ms, -f/--format.'
-    });
-  }
-
-  const prompt = positional.join(' ').trim();
-  if (!prompt) {
-    throw new AppError(ERROR_CODE.INPUT_INVALID, 'Missing prompt', {
-      hint: 'Usage: chatgptcli ask "your prompt"'
-    });
-  }
-
-  return { prompt, format, timeoutSeconds, newChat, maxAttempts, retryDelayMs };
-}
-
-function parseReadArgs(args) {
-  let format = 'json';
-  const positional = [];
-
-  for (let i = 0; i < args.length; i += 1) {
-    const token = args[i];
-
-    if (!token.startsWith('-')) {
-      positional.push(token);
-      continue;
-    }
-
-    if (token === '-f' || token === '--format') {
-      const next = requireValue(args, i, '--format');
-      if (next !== 'json' && next !== 'text') {
-        throw new AppError(ERROR_CODE.INPUT_INVALID, `Unsupported format: ${next}`, {
-          hint: 'Supported formats: json, text.'
-        });
-      }
-      format = next;
-      i += 1;
-      continue;
-    }
-
-    throw new AppError(ERROR_CODE.INPUT_INVALID, `Unknown option: ${token}`, {
-      hint: 'Supported options: -f/--format.'
-    });
-  }
-
-  if (positional.length > 1) {
-    throw new AppError(ERROR_CODE.INPUT_INVALID, 'read takes at most one chat URL or id.');
-  }
-
-  return { format, url: normalizeChatUrl(positional[0]) };
-}
-
-function parseSwitchArgs(args) {
-  if (args.length !== 1 || args[0].startsWith('-')) {
-    throw new AppError(ERROR_CODE.INPUT_INVALID, 'switch requires exactly one chat URL or id.', {
-      hint: 'Usage: chatgptcli switch https://chatgpt.com/c/<id>'
-    });
-  }
-
-  return { url: normalizeChatUrl(args[0]) };
-}
-
-function parseDoctorArgs(args) {
-  let sessions = false;
-  let noLive = false;
-
-  for (const token of args) {
-    if (token === '--sessions') {
-      sessions = true;
-      continue;
-    }
-
-    if (token === '--no-live') {
-      noLive = true;
-      continue;
-    }
-
-    throw new AppError(ERROR_CODE.INPUT_INVALID, `Unknown option: ${token}`, {
-      hint: 'Supported options: --sessions, --no-live.'
-    });
-  }
-
-  return { sessions, noLive };
-}
-
-function parseSetupArgs(args) {
-  if (args.length > 0) {
-    throw new AppError(ERROR_CODE.INPUT_INVALID, `Unknown option: ${args[0]}`, {
-      hint: 'setup does not take options.'
-    });
-  }
-
-  return {};
-}
-
-function parseSetChromeArgs(args) {
-  let executable;
-  let profileDir;
-
-  for (let i = 0; i < args.length; i += 1) {
-    const token = args[i];
-
-    if (token === '--profile') {
-      profileDir = requireValue(args, i, '--profile');
-      i += 1;
-      continue;
-    }
-
-    if (token.startsWith('-')) {
-      throw new AppError(ERROR_CODE.INPUT_INVALID, `Unknown option: ${token}`, {
-        hint: 'Supported options: --profile <dir>.'
-      });
-    }
-
-    if (executable) {
-      throw new AppError(ERROR_CODE.INPUT_INVALID, 'set-chrome takes at most one executable path.');
-    }
-    executable = token;
-  }
-
-  if (!executable && !profileDir) {
-    throw new AppError(ERROR_CODE.INPUT_INVALID, 'Nothing to set.', {
-      hint: 'Usage: chatgptcli set-chrome <path-to-chrome.exe> [--profile <dir>]'
-    });
-  }
-
-  return { executable, profileDir };
-}
-
-function requireValue(args, index, flag) {
-  const value = args[index + 1];
-  if (!value || value.startsWith('-')) {
-    throw new AppError(ERROR_CODE.INPUT_INVALID, `Missing value for ${flag}`, {
-      hint: `Provide a value after ${flag}.`
-    });
-  }
-  return value;
-}
-
 function helpText() {
   return [
     `chatgptcli v${VERSION}`,
@@ -299,7 +91,7 @@ function helpText() {
     'Web-backed ChatGPT CLI via the local opencli Browser Bridge.',
     '',
     'Usage:',
-    '  chatgptcli ask <prompt> [--new] [--timeout <seconds>] [--max-attempts <n>] [--retry-delay-ms <ms>] [-f json|text]',
+    '  chatgptcli ask <prompt> [--new] [--file <path>] [--timeout <seconds>] [--max-attempts <n>] [--retry-delay-ms <ms>] [-f json|text]',
     '  chatgptcli read [chat-url-or-id] [-f json|text]',
     '  chatgptcli switch <chat-url-or-id>',
     '  chatgptcli doctor [--sessions] [--no-live]',

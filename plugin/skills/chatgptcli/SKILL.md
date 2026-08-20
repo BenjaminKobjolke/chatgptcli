@@ -1,6 +1,6 @@
 ---
 name: chatgptcli
-description: Read ChatGPT conversations and ask ChatGPT questions via the user's logged-in browser session. Use when the user says "get the chatgpt chat", "read the chatgpt conversation", "get the chat for <chatgpt.com URL or id>", "ask chatgpt <question>", or "send this to chatgpt". Drives the compiled chatgptcli.exe, which controls a local Chrome session logged into chatgpt.com.
+description: Read ChatGPT conversations and ask ChatGPT questions via the user's logged-in browser session. Use when the user says "get the chatgpt chat", "read the chatgpt conversation", "get the chat for <chatgpt.com URL or id>", "ask chatgpt <question>", "ask chatgpt about this file", or "send this to chatgpt". Drives the compiled chatgptcli.exe, which controls a local Chrome session logged into chatgpt.com.
 ---
 
 # chatgptcli
@@ -32,10 +32,11 @@ All commands print JSON by default; use `-f text` for plain text and relay that 
 | "get / read the chatgpt chat" (current chat) | `chatgptcli.exe read -f text` |
 | "get the chat for <url or id>" | `chatgptcli.exe read <url-or-id> -f text` |
 | "ask chatgpt X" | `chatgptcli.exe ask "X" -f text` |
+| "ask chatgpt about file Y" / "send this file to chatgpt" | `chatgptcli.exe ask "question" --file "path\to\Y" -f text` |
 
 Notes:
 - `read` accepts a full `https://chatgpt.com/c/<id>` URL or the bare id.
-- `ask` options: `--new` starts a fresh chat; `--timeout <seconds>` for long answers (default 120).
+- `ask` options: `--new` starts a fresh chat; `--timeout <seconds>` for long answers (default 120); `--file <path>` inlines a local text file's content into the prompt (UTF-8 text only, max 1 MB — no browser upload). Use an absolute or repo-relative path and quote it for PowerShell.
 - Quote the prompt for PowerShell; escape embedded double quotes.
 
 ## 3. Prerequisites and errors

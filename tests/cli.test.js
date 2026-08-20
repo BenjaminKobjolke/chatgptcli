@@ -1,4 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { runCli } from '../src/cli.js';
 import { __resetAskDepsForTest, __setAskDepsForTest, __test__ as askHelpers } from '../src/commands/ask.js';
 import { __resetExecRunnerForTest, __setExecRunnerForTest } from '../src/core/opencli.js';
@@ -124,6 +127,43 @@ describe('cli', () => {
 
     expect(code).toBe(2);
     expect(stderr.join('')).toContain('INPUT_INVALID');
+  });
+
+  test('ask --file inlines the file content into the prompt', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'chatgptcli-test-'));
+    const filePath = join(dir, 'notes.md');
+    writeFileSync(filePath, '# My Notes\nSome content here.', 'utf8');
+
+    const prompts = [];
+    __setAskDepsForTest({
+      browserAskRunner: async (input) => {
+        prompts.push(input.prompt);
+        return { response: 'OK' };
+      },
+      sleep: async () => {}
+    });
+
+    try {
+      const code = await runCli(['ask', 'What do you think?', '--file', filePath, '-f', 'json']);
+
+      expect(code).toBe(0);
+      expect(prompts).toHaveLength(1);
+      expect(prompts[0]).toContain('What do you think?');
+      expect(prompts[0]).toContain('--- FILE: notes.md ---');
+      expect(prompts[0]).toContain('# My Notes\nSome content here.');
+      expect(prompts[0]).toContain('--- END FILE ---');
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test('ask --file with missing file returns exit 2', async () => {
+    const stderr = captureStderr();
+    const code = await runCli(['ask', 'hello', '--file', 'no-such-file.txt']);
+
+    expect(code).toBe(2);
+    expect(stderr.join('')).toContain('INPUT_INVALID');
+    expect(stderr.join('')).toContain('File not found');
   });
 
   test('invalid format returns exit 2', async () => {

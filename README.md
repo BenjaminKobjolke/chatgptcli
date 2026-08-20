@@ -6,7 +6,7 @@ It does not use the OpenAI API. It drives the authenticated `chatgpt.com` web UI
 
 ## Commands
 
-- [`chatgptcli ask <prompt> [--new] [--timeout <seconds>] [--max-attempts <n>] [--retry-delay-ms <ms>] [-f json|text]`](docs/commands/ask.md)
+- [`chatgptcli ask <prompt> [--new] [--file <path>] [--timeout <seconds>] [--max-attempts <n>] [--retry-delay-ms <ms>] [-f json|text]`](docs/commands/ask.md)
 - [`chatgptcli read [chat-url-or-id] [-f json|text]`](docs/commands/read.md)
 - [`chatgptcli switch <chat-url-or-id>`](docs/commands/switch.md)
 - [`chatgptcli switch-session [number|contextId|none]`](docs/commands/switch-session.md)
@@ -68,6 +68,8 @@ To publish a new release with the exe attached (requires `gh` CLI, logged in):
 ```bash
 tools\build_and_create_github_release.bat
 ```
+
+Full release flow (version/build bump, release notes, publish): [docs/CREATE_NEW_RELEASE.md](docs/CREATE_NEW_RELEASE.md).
 
 ## One-Click Setup Check
 
