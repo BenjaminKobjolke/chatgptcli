@@ -1,5 +1,6 @@
 import { AppError, ERROR_CODE, EXIT_CODE, exitCodeForError, toAppError } from './core/errors.js';
 import { runAsk } from './commands/ask.js';
+import { normalizeChatUrl, runRead, runSwitch } from './commands/read.js';
 import { runDoctor } from './commands/doctor.js';
 import { runSetup } from './commands/setup.js';
 
@@ -21,6 +22,18 @@ export async function runCli(argv) {
   try {
     if (command === 'ask') {
       const result = await runAsk(parseAskArgs(argv.slice(1)));
+      writeStdout(result.output);
+      return result.exitCode;
+    }
+
+    if (command === 'read') {
+      const result = await runRead(parseReadArgs(argv.slice(1)));
+      writeStdout(result.output);
+      return result.exitCode;
+    }
+
+    if (command === 'switch') {
+      const result = await runSwitch(parseSwitchArgs(argv.slice(1)));
       writeStdout(result.output);
       return result.exitCode;
     }
@@ -133,6 +146,52 @@ function parseAskArgs(args) {
   return { prompt, format, timeoutSeconds, newChat, maxAttempts, retryDelayMs };
 }
 
+function parseReadArgs(args) {
+  let format = 'json';
+  const positional = [];
+
+  for (let i = 0; i < args.length; i += 1) {
+    const token = args[i];
+
+    if (!token.startsWith('-')) {
+      positional.push(token);
+      continue;
+    }
+
+    if (token === '-f' || token === '--format') {
+      const next = requireValue(args, i, '--format');
+      if (next !== 'json' && next !== 'text') {
+        throw new AppError(ERROR_CODE.INPUT_INVALID, `Unsupported format: ${next}`, {
+          hint: 'Supported formats: json, text.'
+        });
+      }
+      format = next;
+      i += 1;
+      continue;
+    }
+
+    throw new AppError(ERROR_CODE.INPUT_INVALID, `Unknown option: ${token}`, {
+      hint: 'Supported options: -f/--format.'
+    });
+  }
+
+  if (positional.length > 1) {
+    throw new AppError(ERROR_CODE.INPUT_INVALID, 'read takes at most one chat URL or id.');
+  }
+
+  return { format, url: normalizeChatUrl(positional[0]) };
+}
+
+function parseSwitchArgs(args) {
+  if (args.length !== 1 || args[0].startsWith('-')) {
+    throw new AppError(ERROR_CODE.INPUT_INVALID, 'switch requires exactly one chat URL or id.', {
+      hint: 'Usage: chatgptcli switch https://chatgpt.com/c/<id>'
+    });
+  }
+
+  return { url: normalizeChatUrl(args[0]) };
+}
+
 function parseDoctorArgs(args) {
   let sessions = false;
   let noLive = false;
@@ -184,6 +243,8 @@ function helpText() {
     '',
     'Usage:',
     '  chatgptcli ask <prompt> [--new] [--timeout <seconds>] [--max-attempts <n>] [--retry-delay-ms <ms>] [-f json|text]',
+    '  chatgptcli read [chat-url-or-id] [-f json|text]',
+    '  chatgptcli switch <chat-url-or-id>',
     '  chatgptcli doctor [--sessions] [--no-live]',
     '  chatgptcli setup',
     '',
