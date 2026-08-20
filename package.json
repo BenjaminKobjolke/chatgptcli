@@ -9,6 +9,7 @@
   "scripts": {
     "start": "bun run src/main.js",
     "setup": "bun run src/main.js setup",
+    "build": "bun build --compile --outfile chatgptcli.exe src/main.js",
     "test": "bun test"
   },
   "engines": {
