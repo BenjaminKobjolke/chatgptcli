@@ -1,4 +1,4 @@
-export const ERROR_CODE = {
+export const ERROR_CODE = Object.freeze({
   INPUT_INVALID: 'INPUT_INVALID',
   AUTH_MISSING: 'AUTH_MISSING',
   AUTH_INVALID: 'AUTH_INVALID',
@@ -6,17 +6,18 @@ export const ERROR_CODE = {
   API_ERROR: 'API_ERROR',
   CONFIG_INVALID: 'CONFIG_INVALID',
   UNKNOWN: 'UNKNOWN'
-};
+});
 
-export const EXIT_CODE = {
+export const EXIT_CODE = Object.freeze({
   SUCCESS: 0,
   GENERIC: 1,
   INPUT_INVALID: 2,
   AUTH: 3,
   NETWORK: 4,
   API: 5,
-  CONFIG: 6
-};
+  CONFIG: 6,
+  UPDATE_REQUIRED: 7
+});
 
 export class AppError extends Error {
   constructor(code, message, extra = {}) {

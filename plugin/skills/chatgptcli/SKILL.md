@@ -23,6 +23,11 @@ Invoke-WebRequest "https://github.com/BenjaminKobjolke/chatgptcli/releases/lates
 
 If the download fails (404, network error): **stop**. Tell the user the exe could not be downloaded and point them to https://github.com/BenjaminKobjolke/chatgptcli/releases — there is no build fallback.
 
+### Exe updates
+
+- If any command prints `UPDATE_REQUIRED` (exit code 7): the installed exe is older than this plugin requires (`min_exe_version.txt` next to this file). Run the commands printed in that message, then retry the original command once.
+- Bootstrap for old exes (≤ 0.1.1, before the self-check existed): after locating an installed exe at `$HOME\.chatgptcli\bin\chatgptcli.exe`, if `chatgptcli.exe --version` prints less than `0.1.2`, run `taskkill /im chatgptcli.exe /f` and the download command above once, then continue.
+
 ## 2. Command mapping
 
 All commands print JSON by default; use `-f text` for plain text and relay that to the user.
