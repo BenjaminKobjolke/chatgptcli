@@ -19,7 +19,7 @@ tools\build_increment.bat    # +1, prints new value
 tools\build_decrement.bat    # -1 (undo)
 ```
 
-Bump the semver in `package.json` by hand only for feature/breaking releases — the GitHub tag is `v<version>`, and `gh` fails if the tag already exists.
+Bump the semver in `package.json` by hand only for feature/breaking releases — the GitHub tag is `v<version>`, and `gh` fails if the tag already exists. The Claude plugin manifest (`plugin/.claude-plugin/plugin.json`) is synced to the `package.json` version automatically by the release bat — `claude plugin update` reads that file, so a stale value there makes updates report "already at the latest version".
 
 ## 3. Create the release notes
 
