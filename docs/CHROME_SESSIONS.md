@@ -70,6 +70,36 @@ chatgptcli ask "hello"
 
 **Wrong profile answering?** `chatgptcli switch-session` again — the `(current)` marker shows the active pick.
 
+## Sharing one Chrome profile across tools
+
+chatgptcli and tolinocli (and any future OpenCLI sibling) each default `--user-data-dir` to
+their own `~/.<tool>/chrome-profile`, so **logins do not carry across tools automatically**.
+To share, point every tool's `chrome.profileDir` at ONE shared dir. Since `profileDir` is
+passed straight to Chrome's `--user-data-dir`, an identical dir means shared logins, cookies,
+and a single OpenCLI extension connection. One bridge daemon then serves all tools; sessions
+are keyed by site (`site:chatgpt` vs `site:tolino`), so the same profile can be logged into
+both chatgpt.com and webreader.mytolino.com without conflict.
+
+**Steps:**
+
+1. Pick a neutral shared dir owned by no single tool, e.g. `C:\Users\XIDA\.opencli\chrome-profile`.
+2. *(Optional, to skip re-login)* Fully close Chrome, then seed the shared dir from a profile
+   that is already logged in:
+   ```bash
+   robocopy "C:\Users\XIDA\.chatgptcli\chrome-profile" "C:\Users\XIDA\.opencli\chrome-profile" /E /R:1 /W:1
+   ```
+3. Point every tool at the shared dir:
+   ```bash
+   chatgptcli set-chrome "D:\Apps\chrome-chatgpt\chrome.exe" --profile "C:\Users\XIDA\.opencli\chrome-profile"
+   tolinocli  set-chrome "D:\Apps\chrome-chatgpt\chrome.exe" --profile "C:\Users\XIDA\.opencli\chrome-profile"
+   ```
+4. `launch` from any one tool, then log into each site once in that profile (skipped for any
+   site whose login was seeded in step 2).
+
+**Caveat:** Chrome allows only one process per `--user-data-dir`. Running a second tool while
+the first's Chrome is open just reuses the single Chrome instance — that is expected, not a
+conflict. The copy in step 2 requires Chrome fully closed (locked SQLite / `SingletonLock`).
+
 ## Related opencli state
 
 The opencli daemon keeps its own profile config in `~/.opencli/browser-profiles.json` (aliases, default via `opencli profile use`). chatgptcli does not write it; the `bridgeProfile` preference in chatgptcli's own settings.json takes effect per connect call and coexists with an opencli default.
