@@ -44,6 +44,7 @@ All commands print JSON by default; use `-f text` for plain text and relay that 
 Notes:
 - `read` accepts a full `https://chatgpt.com/c/<id>` URL or the bare id.
 - `read` shows attachments as markers (`[image-01]`, `[report-01]`, `[file-01]`), not content. To get the actual content use `--files-inline` (report/file text in the transcript) or `--files-output <dir>` (writes every attachment to disk, images included, and turns each marker into a markdown link). `--file-id <id>` with `--files-output` downloads just one.
+- `read` reloads the chat before scraping, with or without a URL argument — a stale tab hides the "Files in chat" panel and every attachment with it. An attachment it could not write is named on stderr, and `--files-output` echoes the resolved output directory as `filesOutputDir` in the JSON.
 - `ask` options: `--new` starts a fresh chat; `--timeout <seconds>` for long answers (default 120); `--file <path>` inlines a local text file's content into the prompt (UTF-8 text only, max 1 MB — no browser upload). Use an absolute or repo-relative path and quote it for PowerShell.
 - Quote the prompt for PowerShell; escape embedded double quotes.
 

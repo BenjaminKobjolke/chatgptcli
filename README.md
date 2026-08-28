@@ -7,7 +7,7 @@ It does not use the OpenAI API. It drives the authenticated `chatgpt.com` web UI
 ## Commands
 
 - [`chatgptcli ask <prompt> [--new] [--timeout <seconds>] [--max-attempts <n>] [--retry-delay-ms <ms>] [-f json|text]`](docs/commands/ask.md)
-- [`chatgptcli read [chat-url-or-id] [-f json|text]`](docs/commands/read.md)
+- [`chatgptcli read [chat-url-or-id] [--files-output <dir>] [--file-id <id>] [--files-inline] [-f json|text]`](docs/commands/read.md)
 - [`chatgptcli switch <chat-url-or-id>`](docs/commands/switch.md)
 - [`chatgptcli switch-session [number|contextId|none]`](docs/commands/switch-session.md)
 - [`chatgptcli set-chrome <path-to-chrome.exe> [--profile <dir>]`](docs/CHROME_SESSIONS.md)
