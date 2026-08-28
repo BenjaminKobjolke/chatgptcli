@@ -210,6 +210,13 @@ function collectTargets(messages, fileId) {
   return matches;
 }
 
+// A skipped download used to be invisible: the transcript kept the bare marker
+// and looked exactly like a chat whose attachment was never found. stdout stays
+// machine-readable, so the warning belongs on stderr (as in doctor.js).
+function warnSkipped(id, reason) {
+  process.stderr.write(`attachment ${id}: download failed (${reason}), marker left in place\n`);
+}
+
 // Writes every attachment (or just `fileId`) into `filesOutputDir`, rewriting
 // the owning message's bare marker into a markdown link. A download that fails
 // leaves the marker bare instead of failing the read — an expired signed URL
@@ -217,10 +224,18 @@ function collectTargets(messages, fileId) {
 export async function downloadAttachments({ page, messages, filesOutputDir, fileId }) {
   for (const { message, attachment } of collectTargets(messages, fileId)) {
     const bytes = await attachmentBytes(page, attachment).catch(() => null);
-    if (!bytes) continue;
+    if (!bytes) {
+      warnSkipped(attachment.id, 'no content');
+      continue;
+    }
 
     const path = join(filesOutputDir, `${attachment.id}${bytes.extension}`);
-    writeFileSync(path, bytes.buffer);
+    try {
+      writeFileSync(path, bytes.buffer);
+    } catch (error) {
+      warnSkipped(attachment.id, error instanceof Error ? error.message : String(error));
+      continue;
+    }
 
     const relativePath = toPosixPath(path);
     attachment.file = relativePath;

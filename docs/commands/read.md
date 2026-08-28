@@ -83,6 +83,7 @@ Text: `[role]` header followed by the message body, blank line between messages.
 - Images come from two places. An `<img>` rendered inside a message gets its marker at the real position in that message's text. Everything else — uploaded screenshots, generated images — is found through the "Files in chat" panel and appended as its own `image` entry after the messages, because ChatGPT frequently renders those outside the message node, or not at all until the page has fully hydrated. The panel is the reliable source; a panel image that duplicates one already found in a message is dropped rather than given a second id.
 - An `<img>` counts as content only if it has actually loaded at 64x64 or larger; smaller or unloaded ones are UI chrome (citation favicons, tool glyphs) and get no marker.
 - Ids are assigned per read. Take the id from the same run's output before passing it to `--file-id`.
-- A download that fails — an expired signed URL, a blocked host — leaves the bare marker in place and the read still succeeds.
+- A download that fails — an expired signed URL, a blocked host — leaves the bare marker in place and the read still succeeds; the skipped attachment is named on stderr.
+- With `--files-output`, the JSON output carries `filesOutputDir`: the directory the files actually landed in, resolved to an absolute path (marker links keep the path you passed).
 - ChatGPT Deep Research reports (the downloadable document with an Export button) are captured as an extra `report` entry — see [`docs/INLINE_DOCUMENTS_AND_IMAGES.md`](../INLINE_DOCUMENTS_AND_IMAGES.md) for what is and isn't preserved.
 - Requires the same setup as `ask` (Browser Bridge connected, logged into chatgpt.com).

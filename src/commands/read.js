@@ -1,4 +1,5 @@
 import { mkdirSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { AppError, ERROR_CODE, EXIT_CODE } from '../core/errors.js';
 import { connectBridge, loadBrowserBridge } from '../core/opencli.js';
 import { resolveBridgeProfile } from '../core/settings.js';
@@ -8,7 +9,8 @@ import {
   ATTACHMENT_KIND,
   downloadAttachments,
   normalizeAttachments,
-  textAttachmentEntry
+  textAttachmentEntry,
+  toPosixPath
 } from './read_attachments.js';
 
 // Turn containers, not role nodes: an image-only assistant reply has no role
@@ -211,7 +213,10 @@ export async function runRead(input) {
     // its own images, so the running image count is handed to the next scrape.
     const context = {
       counters: { image: Number(result?.imageCount) || 0, report: 0, file: 0 },
-      filesInline: Boolean(input.filesInline)
+      filesInline: Boolean(input.filesInline),
+      // Read by the panel resolver to decide whether an image's bytes must
+      // travel back with it — its signed URL may not survive a second fetch.
+      filesOutputDir: input.filesOutputDir || ''
     };
     await resolveReportFrames(rawMessages, page, context);
     await resolveReportFiles(rawMessages, page, context);
@@ -237,9 +242,17 @@ export async function runRead(input) {
       };
     }
 
+    // Marker links keep the caller's own (possibly relative) path; the JSON
+    // says once, unambiguously, which directory that resolved to.
+    const filesOutputDir = input.filesOutputDir ? { filesOutputDir: toPosixPath(resolve(input.filesOutputDir)) } : {};
+
     return {
       exitCode: EXIT_CODE.SUCCESS,
-      output: JSON.stringify({ ok: true, url: result?.url || '', count: messages.length, messages }, null, 2)
+      output: JSON.stringify(
+        { ok: true, url: result?.url || '', count: messages.length, ...filesOutputDir, messages },
+        null,
+        2
+      )
     };
   });
 }

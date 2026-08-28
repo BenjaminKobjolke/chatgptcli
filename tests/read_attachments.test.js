@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import { runCli } from '../src/cli.js';
 import { __resetReadDepsForTest, __setReadDepsForTest } from '../src/commands/read.js';
 import { __resetAttachmentDepsForTest, __setAttachmentDepsForTest, toPosixPath } from '../src/commands/read_attachments.js';
@@ -99,6 +99,9 @@ describe('read --files-output', () => {
     expect(existsSync(join(outputDir, 'image-01.png'))).toBe(true);
     const output = JSON.parse(stdout.join(''));
     expect(output.messages[0].attachments[0].file).toBe(toPosixPath(join(outputDir, 'image-01.png')));
+    // A relative --files-output is otherwise ambiguous: the caller cannot tell
+    // which cwd the files landed under.
+    expect(output.filesOutputDir).toBe(toPosixPath(resolve(outputDir)));
   });
 
   test('leaves the bare marker in place when both fetch paths fail', async () => {
@@ -112,6 +115,7 @@ describe('read --files-output', () => {
     });
 
     const stdout = captureStdout();
+    const stderrChunks = captureStderr();
     const code = await runCli(['read', 'abc', '-f', 'json', '--files-output', outputDir]);
 
     expect(code).toBe(0);
@@ -119,6 +123,8 @@ describe('read --files-output', () => {
     const output = JSON.parse(stdout.join(''));
     expect(output.messages[0].text).toContain('[image-01]');
     expect(output.messages[0].attachments[0].file).toBeUndefined();
+    // A silent skip is indistinguishable from a chat that had no attachment.
+    expect(stderrChunks.join('')).toContain('image-01');
   });
 
   test('--file-id writes only the requested attachment', async () => {
