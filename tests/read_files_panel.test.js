@@ -21,7 +21,7 @@ afterEach(() => {
 
 const REPORT_BODY = '# Report Title\n\nBody text.';
 
-function stubReportChat() {
+function stubReportChat(title = 'Report Title') {
   const evaluateResult = {
     url: 'https://chatgpt.com/c/abc',
     messages: [{ role: 'user', text: 'Research X', title: '' }]
@@ -38,7 +38,7 @@ function stubReportChat() {
             authHeader: 'Bearer test-token',
             metaJson: { status: 'success', download_url: 'https://chatgpt.com/backend-api/estuary/content?id=file_abc&sig=xyz' },
             contentJson: {
-              title: 'Report Title',
+              title,
               widget_state: { report_message: { content: { parts: [REPORT_BODY] } } }
             }
           }
@@ -92,6 +92,24 @@ describe('read: Files-in-chat report resolution', () => {
       const output = JSON.parse(stdout.join(''));
       expect(output.messages[1].text).toBe(`![report-01](${toPosixPath(written)})`);
       expect(output.messages[1].attachments[0].file).toBe(toPosixPath(written));
+    } finally {
+      rmSync(outputDir, { recursive: true, force: true });
+    }
+  });
+
+  // A report's attachment `name` is its title, not a filename: deriving the
+  // extension from it wrote `report-01.2 final` for a dotted title, so the
+  // caller found no markdown file at all.
+  test('a report with a dotted title is still written as .md', async () => {
+    stubReportChat('Badge System v1.2 final');
+    const outputDir = mkdtempSync(join(tmpdir(), 'chatgptcli-report-'));
+
+    try {
+      captureStdout();
+      const code = await runCli(['read', 'abc', '-f', 'json', '--files-output', outputDir]);
+
+      expect(code).toBe(0);
+      expect(readFileSync(join(outputDir, 'report-01.md'), 'utf8')).toBe(REPORT_BODY);
     } finally {
       rmSync(outputDir, { recursive: true, force: true });
     }

@@ -186,7 +186,11 @@ async function attachmentBytes(page, attachment) {
   }
 
   if (typeof attachment.text !== 'string' || !attachment.text) return null;
-  const extension = extname(attachment.name || '') || DEFAULT_TEXT_EXTENSION[attachment.kind] || '.txt';
+  // Only a `file`'s name is a real filename (the `fn=` param). A report's is
+  // its title, where extname() reads a dotted title ("Badge System v1.2
+  // final") as the extension and writes `report-01.2 final` instead of `.md`.
+  const named = attachment.kind === ATTACHMENT_KIND.FILE ? extname(attachment.name || '') : '';
+  const extension = named || DEFAULT_TEXT_EXTENSION[attachment.kind] || '.txt';
   return { buffer: Buffer.from(attachment.text, 'utf8'), extension };
 }
 

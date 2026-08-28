@@ -32,7 +32,9 @@ so it reaches the caller only through:
 - `--files-inline` — print the report/file body in the transcript, the
   behavior that used to be unconditional; or
 - `--files-output <dir>` — write it to `<dir>/<id><ext>` (`.md` for a report)
-  and rewrite the marker to `![report-01](<dir>/report-01.md)`.
+  and rewrite the marker to `![report-01](<dir>/report-01.md)`. A report is
+  always `.md`: its `name` is the report *title*, so a title with a dot in it
+  must not be read as carrying its own extension.
 
 Images follow the same contract but have no inline form: `--files-output`
 downloads the bytes, and without it the marker is all the caller gets. An
