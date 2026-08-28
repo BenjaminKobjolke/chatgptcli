@@ -3,11 +3,14 @@ chatgptcli.exe
 *.log
 .DS_Store
 .omx
+.claude/
 claude-plans/
 # Ignore agent planning directories
 claude-plans/
 tools/analyze_code_config.bat
 code_analysis_results/
+tmp/
+/PLAN_*.md
 /*.bun-build
 coding-rules.json
 altersvorsorge.txt
