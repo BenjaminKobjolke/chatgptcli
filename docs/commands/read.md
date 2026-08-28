@@ -6,7 +6,7 @@ Dump the full transcript (all user and assistant messages) of a chat. Sends noth
 chatgptcli read [chat-url-or-id] [--files-output <dir>] [--file-id <id>] [--files-inline] [-f json|text]
 ```
 
-Without an argument, reads the chat currently open in the browser tab. With a URL or bare chat id, navigates there first (like [`switch`](switch.md)) and then reads.
+Without an argument, reads the chat currently open in the browser tab. With a URL or bare chat id, navigates there first (like [`switch`](switch.md)) and then reads. Either way the chat is hard-reloaded before scraping — a stale tab hides the "Files in chat" panel, and with it every attachment.
 
 ## Options
 

@@ -83,6 +83,18 @@ real mouse move) was tested live and refuted — the button is present
 immediately after a hard reload with zero hover. Do not remove the root-URL hop
 to "simplify" this; see `PLAN.md` session 4 for the live A/B evidence.
 
+That applies to the **no-argument** `read` too, which reads whatever chat the
+tab already shows. It used to skip the reload entirely — and confirmed live on a
+chat holding one Deep Research report, `read <url>` returned the report while a
+bare `read` against the same, already-open chat returned only the user message,
+no report and no warning. `openChat` now derives the target from the tab's own
+`window.location.href` through `chatUrlFromLocation` (a chatgpt.com host + a
+`/c/` path, returning `null` for anything else) and feeds it to the same
+`navigateAndWaitForMessages`. `normalizeChatUrl` must not be reused for that
+test: it normalizes *user input*, so it turns a prefix-less string like
+`about:blank` into `https://chatgpt.com/c/about:blank` and throws on a foreign
+host.
+
 Implementation: `resolveReportFiles` in `src/commands/read_files_panel.js`,
 called from `runRead` (`read.js`) after the top-frame scrape. Per file entry,
 repeated once per file

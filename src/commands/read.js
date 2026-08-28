@@ -15,6 +15,28 @@ import {
 // node, so counting role nodes underreports how much of the chat has mounted.
 const TURN_SELECTOR = '[data-testid^="conversation-turn"], [data-message-author-role]';
 const CHATGPT_ROOT_URL = 'https://chatgpt.com/';
+const CHAT_HOSTS = Object.freeze(['chatgpt.com', 'chat.openai.com']);
+const CHAT_PATH_PREFIX = '/c/';
+
+function isChatHost(hostname) {
+  return CHAT_HOSTS.includes(hostname) || hostname.endsWith('.chatgpt.com');
+}
+
+// Location test for a bare `read` (no URL argument). Deliberately NOT
+// `normalizeChatUrl`: that one normalizes *user input*, so it coerces any
+// prefix-less string into `https://chatgpt.com/c/<string>` (`about:blank`
+// would become a bogus chat URL) and throws on a foreign host. Here a
+// non-chat tab is a normal case, not an error.
+function chatUrlFromLocation(href) {
+  if (typeof href !== 'string' || !href) return null;
+  let url;
+  try {
+    url = new URL(href);
+  } catch {
+    return null;
+  }
+  return isChatHost(url.hostname) && url.pathname.startsWith(CHAT_PATH_PREFIX) ? url.href : null;
+}
 
 let openChatImpl = openChat;
 
@@ -110,8 +132,7 @@ export function normalizeChatUrl(target) {
     throw new AppError(ERROR_CODE.INPUT_INVALID, `Invalid chat URL: ${target}`);
   }
 
-  const hostname = url.hostname;
-  if (hostname !== 'chatgpt.com' && !hostname.endsWith('.chatgpt.com') && hostname !== 'chat.openai.com') {
+  if (!isChatHost(url.hostname)) {
     throw new AppError(ERROR_CODE.INPUT_INVALID, `Not a ChatGPT URL: ${target}`, {
       hint: 'Use a https://chatgpt.com/c/... URL or a bare chat id.'
     });
@@ -152,8 +173,12 @@ async function openChat(input) {
     preferredContextId: resolveBridgeProfile()
   });
 
-  if (input.url) {
-    await navigateAndWaitForMessages(page, input.url);
+  // Without an argument the chat already open in the tab is the target — but it
+  // still needs the same hard reload, or the stale tab hides the "More" menu
+  // and the "Files in chat" panel and every attachment silently disappears.
+  const url = input.url || chatUrlFromLocation(await page.evaluate('window.location.href').catch(() => ''));
+  if (url) {
+    await navigateAndWaitForMessages(page, url);
   }
 
   return { bridge, page };
@@ -219,4 +244,4 @@ export async function runRead(input) {
   });
 }
 
-export const __test__ = { navigateAndWaitForMessages };
+export const __test__ = { navigateAndWaitForMessages, chatUrlFromLocation };

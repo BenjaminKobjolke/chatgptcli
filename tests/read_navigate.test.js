@@ -57,3 +57,21 @@ describe('navigateAndWaitForMessages', () => {
     expect(index).toBe(counts.length);
   });
 });
+
+// A bare `read` (no URL) used to skip the reload above entirely and scrape the
+// tab as-is — the stale-tab state that leaves the "Files in chat" panel out of
+// the DOM, so reports and generated files vanished from the transcript.
+describe('chatUrlFromLocation', () => {
+  test('accepts a chat URL on every supported host', () => {
+    expect(readHelpers.chatUrlFromLocation('https://chatgpt.com/c/abc123')).toBe('https://chatgpt.com/c/abc123');
+    expect(readHelpers.chatUrlFromLocation('https://chat.openai.com/c/abc123')).toBe('https://chat.openai.com/c/abc123');
+  });
+
+  test('returns null for anything that is not a chat, without throwing', () => {
+    expect(readHelpers.chatUrlFromLocation('about:blank')).toBeNull();
+    expect(readHelpers.chatUrlFromLocation('https://chatgpt.com/')).toBeNull();
+    expect(readHelpers.chatUrlFromLocation('https://example.com/c/abc123')).toBeNull();
+    expect(readHelpers.chatUrlFromLocation('')).toBeNull();
+    expect(readHelpers.chatUrlFromLocation(null)).toBeNull();
+  });
+});
