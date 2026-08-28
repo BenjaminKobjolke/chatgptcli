@@ -42,6 +42,7 @@ All commands print JSON by default; use `-f text` for plain text and relay that 
 | "ask chatgpt about file Y" / "send this file to chatgpt" | `chatgptcli.exe ask "question" --file "path\to\Y" -f text` |
 
 Notes:
+- **If a transcript looks empty, shows a prompt with no answer, or the answer only points at a report/canvas/file: do not report "no answer saved". Re-run the same `read` with `--files-inline`.** Deep research replies, canvases and generated documents live in the chat's "Files in chat" panel, not in the message stream, so a plain `read` shows the prompt alone.
 - `read` accepts a full `https://chatgpt.com/c/<id>` URL or the bare id.
 - `read` shows attachments as markers (`[image-01]`, `[report-01]`, `[file-01]`), not content. To get the actual content use `--files-inline` (report/file text in the transcript) or `--files-output <dir>` (writes every attachment to disk, images included, and turns each marker into a markdown link). `--file-id <id>` with `--files-output` downloads just one.
 - `read` reloads the chat before scraping, with or without a URL argument — a stale tab hides the "Files in chat" panel and every attachment with it. An attachment it could not write is named on stderr, and `--files-output` echoes the resolved output directory as `filesOutputDir` in the JSON.
