@@ -38,7 +38,13 @@ export function fakeFilesPanelExtras(evaluateResult, { menuButtonPresent = true,
       if (!entry) return '';
       if (entry.downloadUrl && script.includes(entry.downloadUrl)) return JSON.stringify(entry.metaJson ?? {});
       if (entry.contentUrl && script.includes(entry.contentUrl)) {
-        return typeof entry.contentText === 'string' ? entry.contentText : JSON.stringify(entry.contentJson ?? {});
+        // The hop-2 body fetch classifies by blob type and returns an object;
+        // `imageMime` on an entry makes the fake serve a binary attachment.
+        const text = typeof entry.contentText === 'string' ? entry.contentText : JSON.stringify(entry.contentJson ?? {});
+        if (!script.includes('blob()')) return text;
+        return entry.imageMime
+          ? { type: 'image', mime: entry.imageMime, dataUrl: entry.imageDataUrl || '' }
+          : { type: 'text', text };
       }
       return '';
     }

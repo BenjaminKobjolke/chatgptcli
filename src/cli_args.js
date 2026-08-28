@@ -103,6 +103,9 @@ export function parseAskArgs(args) {
 
 export function parseReadArgs(args) {
   let format = 'json';
+  let filesOutputDir = null;
+  let fileId = null;
+  let filesInline = false;
   const positional = [];
 
   for (let i = 0; i < args.length; i += 1) {
@@ -110,6 +113,23 @@ export function parseReadArgs(args) {
 
     if (!token.startsWith('-')) {
       positional.push(token);
+      continue;
+    }
+
+    if (token === '--files-output') {
+      filesOutputDir = requireValue(args, i, '--files-output');
+      i += 1;
+      continue;
+    }
+
+    if (token === '--file-id') {
+      fileId = requireValue(args, i, '--file-id');
+      i += 1;
+      continue;
+    }
+
+    if (token === '--files-inline') {
+      filesInline = true;
       continue;
     }
 
@@ -126,7 +146,7 @@ export function parseReadArgs(args) {
     }
 
     throw new AppError(ERROR_CODE.INPUT_INVALID, `Unknown option: ${token}`, {
-      hint: 'Supported options: -f/--format.'
+      hint: 'Supported options: -f/--format, --files-output, --file-id, --files-inline.'
     });
   }
 
@@ -134,7 +154,13 @@ export function parseReadArgs(args) {
     throw new AppError(ERROR_CODE.INPUT_INVALID, 'read takes at most one chat URL or id.');
   }
 
-  return { format, url: normalizeChatUrl(positional[0]) };
+  if (fileId && !filesOutputDir) {
+    throw new AppError(ERROR_CODE.INPUT_INVALID, '--file-id needs a download target.', {
+      hint: 'Use --files-output <dir> together with --file-id.'
+    });
+  }
+
+  return { format, url: normalizeChatUrl(positional[0]), filesOutputDir, fileId, filesInline };
 }
 
 export function parseSwitchArgs(args) {

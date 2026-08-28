@@ -100,7 +100,7 @@ function helpText() {
     '',
     'Usage:',
     '  chatgptcli ask <prompt> [--new] [--file <path>] [--timeout <seconds>] [--max-attempts <n>] [--retry-delay-ms <ms>] [-f json|text]',
-    '  chatgptcli read [chat-url-or-id] [-f json|text]',
+    '  chatgptcli read [chat-url-or-id] [--files-output <dir>] [--file-id <id>] [--files-inline] [-f json|text]',
     '  chatgptcli switch <chat-url-or-id>',
     '  chatgptcli doctor [--sessions] [--no-live]',
     '  chatgptcli setup',
@@ -111,6 +111,7 @@ function helpText() {
     'Notes:',
     '  ask always uses chatgpt.com web UI, not the OpenAI API.',
     '  ask reuses the site:chatgpt browser session and retries blocked or empty responses with a fresh chat fallback.',
+    '  read shows attachments as [image-01]/[report-01] markers; --files-output <dir> downloads them, --files-inline prints report and file bodies instead.',
     '  setup validates local prerequisites and prints browser-extension/login guidance.',
     '  Requires the opencli Browser Bridge and a browser profile that has already logged into chatgpt.com at least once.'
   ].join('\n');

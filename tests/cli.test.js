@@ -146,7 +146,8 @@ describe('cli', () => {
     expect(output.messages[1]).toEqual({
       role: 'report',
       title: 'Report Title',
-      text: '# Report Title\n\nBody text.'
+      text: '[report-01]',
+      attachments: [{ id: 'report-01', kind: 'report', name: 'Report Title' }]
     });
   });
 

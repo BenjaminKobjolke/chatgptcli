@@ -2,7 +2,7 @@
 
 Hazards and techniques for debugging this tool's browser-automation commands
 (`read`, `ask`, `switch`) against the real chatgpt.com — distilled from live
-investigation sessions (see `PLAN.md` for the raw log, `docs/INLINE_DOCUMENTS.md`
+investigation sessions (see `PLAN.md` for the raw log, `docs/INLINE_DOCUMENTS_AND_IMAGES.md`
 for the report/file-resolution contract specifically).
 
 ## Safety hazards — read first
@@ -46,7 +46,7 @@ the real request the app fires. Never hand-fetch the bearer token another way.
 ## Reverse-engineering an undocumented backend-api endpoint
 
 Recipe used to find the generated-file content shape (full writeup:
-`docs/INLINE_DOCUMENTS.md`):
+`docs/INLINE_DOCUMENTS_AND_IMAGES.md`):
 
 1. Open the chat live via claude-in-chrome, read-only first: `tabs_context_mcp`
    → `navigate` (root, then target — see hazard above) → wait → `get_page_text`
@@ -113,6 +113,6 @@ fixture — see `tests/read_files_panel.test.js` for the pattern before touching
 
 ## Related docs
 
-- `docs/INLINE_DOCUMENTS.md` — the maintainer contract for report/file
+- `docs/INLINE_DOCUMENTS_AND_IMAGES.md` — the maintainer contract for report/file
   resolution specifically: DOM mapping, normalizer shapes, known-brittle bits.
 - `PLAN.md` — the raw investigation log this file was distilled from.

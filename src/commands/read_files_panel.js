@@ -2,7 +2,7 @@
 // generated files (code-interpreter/canvas output) alike — via the "Files in
 // chat" panel, the primary working detection path (the cross-origin iframe
 // path in read.js is inert against the real bridge). Split out of read.js to
-// stay under the project's 300-line file limit. See docs/INLINE_DOCUMENTS.md
+// stay under the project's 300-line file limit. See docs/INLINE_DOCUMENTS_AND_IMAGES.md
 // for the full contract.
 //
 // Attachments are listed in the "Files in chat" panel, reached via the
@@ -10,6 +10,14 @@
 // Confirmed live: readNetworkCapture() only exposes request metadata, never
 // response bodies, so content is fetched explicitly in-page rather than read
 // off the capture.
+import {
+  ATTACHMENT_KIND,
+  attachmentId,
+  hasImageForAsset,
+  markerFor,
+  textAttachmentEntry
+} from './read_attachments.js';
+
 const CONVERSATION_OPTIONS_BUTTON_SELECTOR = '[data-testid="conversation-options-button"]';
 const FILES_IN_CHAT_MENU_ITEM_TEXT = 'View files in chat';
 const FILES_IN_CHAT_PANEL_SELECTOR = 'section[aria-label="Files in chat"]';
@@ -98,6 +106,34 @@ async function fetchTextInPage(page, url, authHeader) {
   `);
 }
 
+// Classifies a panel attachment by the blob's own MIME type rather than its
+// filename: confirmed live that an uploaded screenshot's signed content URL
+// carries no `fn=` parameter at all, so there is no name to judge. `wantBytes`
+// decides whether the image travels back as a data URL (a download was asked
+// for) or only as its type — base64 over the bridge is not free.
+async function fetchBodyInPage(page, url, authHeader, wantBytes) {
+  return page.evaluate(`
+    fetch(${JSON.stringify(url)}, {
+      credentials: 'include',
+      headers: { authorization: ${JSON.stringify(authHeader)} }
+    })
+      .then((response) => response.blob())
+      .then((blob) => {
+        if (!blob.type.startsWith('image/')) {
+          return blob.text().then((text) => ({ type: 'text', text }));
+        }
+        if (!${Boolean(wantBytes)}) return { type: 'image', mime: blob.type, dataUrl: '' };
+        return new Promise((resolve) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve({ type: 'image', mime: blob.type, dataUrl: String(reader.result) });
+          reader.onerror = () => resolve({ type: 'image', mime: blob.type, dataUrl: '' });
+          reader.readAsDataURL(blob);
+        });
+      })
+      .catch(() => ({ type: 'text', text: '' }))
+  `);
+}
+
 async function fetchJsonInPage(page, url, authHeader) {
   return safeJsonParse(await fetchTextInPage(page, url, authHeader));
 }
@@ -131,13 +167,24 @@ function normalizeAttachedFileContent(rawText, contentUrl) {
   return text ? { role: 'file', text, title: extractContentFilename(contentUrl) } : null;
 }
 
-async function fetchAttachedFileEntry(page, downloadUrl, authHeader) {
+async function fetchAttachedFileEntry(page, downloadUrl, authHeader, wantBytes) {
   const meta = await fetchJsonInPage(page, downloadUrl, authHeader);
   const contentUrl = meta && typeof meta.download_url === 'string' ? meta.download_url : '';
   if (!contentUrl) return null;
 
-  const rawText = await fetchTextInPage(page, contentUrl, authHeader);
-  return normalizeAttachedFileContent(rawText, contentUrl);
+  const body = await fetchBodyInPage(page, contentUrl, authHeader, wantBytes);
+  if (body?.type === 'image') {
+    return {
+      role: ATTACHMENT_KIND.IMAGE,
+      title: extractContentFilename(contentUrl),
+      mime: body.mime || '',
+      dataUrl: body.dataUrl || '',
+      src: contentUrl,
+      authHeader
+    };
+  }
+
+  return normalizeAttachedFileContent(body?.text ?? '', contentUrl);
 }
 
 // Clicks file entry `index`, captures the network request it fires to
@@ -146,7 +193,7 @@ async function fetchAttachedFileEntry(page, downloadUrl, authHeader) {
 // directly in-page via a two-hop fetch: the download endpoint returns a
 // signed `download_url`, which is then fetched for the actual file content
 // (a Deep Research report's JSON, or a plain generated file's raw text).
-async function fetchAttachedFile(page, index) {
+async function fetchAttachedFile(page, index, wantBytes) {
   await page.startNetworkCapture('');
   const clicked = await page.evaluate(`(() => {
     const btn = document.querySelectorAll(${JSON.stringify(FILE_ENTRY_BUTTON_SELECTOR)})[${index}];
@@ -165,7 +212,7 @@ async function fetchAttachedFile(page, index) {
   const downloadUrl = entry?.url || '';
   const authHeader = entry?.requestHeaders?.authorization || entry?.requestHeaders?.Authorization || '';
 
-  const fileEntry = downloadUrl ? await fetchAttachedFileEntry(page, downloadUrl, authHeader) : null;
+  const fileEntry = downloadUrl ? await fetchAttachedFileEntry(page, downloadUrl, authHeader, wantBytes) : null;
 
   await page
     .evaluate(`(() => {
@@ -177,25 +224,57 @@ async function fetchAttachedFile(page, index) {
   return fileEntry;
 }
 
+// An image has no inline form — `--files-inline` cannot print bytes — so it is
+// always a marker entry, and its id continues the same per-kind sequence the
+// in-page scrape started.
+function imageAttachmentEntry(fileEntry, context) {
+  context.counters.image += 1;
+  const id = attachmentId(ATTACHMENT_KIND.IMAGE, context.counters.image);
+  return {
+    role: ATTACHMENT_KIND.IMAGE,
+    title: fileEntry.title,
+    text: markerFor(id),
+    attachments: [
+      {
+        id,
+        kind: ATTACHMENT_KIND.IMAGE,
+        name: fileEntry.title,
+        src: fileEntry.src,
+        mime: fileEntry.mime,
+        dataUrl: fileEntry.dataUrl,
+        authHeader: fileEntry.authHeader
+      }
+    ]
+  };
+}
+
 // Drives the "Files in chat" panel to resolve attachments — Deep Research
 // reports and plain generated files (code-interpreter/canvas output) alike —
-// and appends each to `rawMessages` as `{ role, text, title }` (role is
-// `'report'` or `'file'`, decided by `normalizeAttachedFileContent`).
-// Independent of (and additional to) the cross-origin-iframe resolution in
-// read.js: that path is a no-op against the real bridge (see PLAN.md), so
-// this is the only path that currently produces report bodies. No-ops
-// entirely against a `page` that lacks network-capture support (older test
-// doubles).
-export async function resolveReportFiles(rawMessages, page) {
+// and appends each to `rawMessages` as a `[report-NN]` / `[file-NN]` marker
+// entry (or the inlined body under `--files-inline`). Independent of (and
+// additional to) the cross-origin-iframe resolution in read.js: that path is a
+// no-op against the real bridge (see PLAN.md), so this is the only path that
+// currently produces report bodies. No-ops entirely against a `page` that
+// lacks network-capture support (older test doubles).
+export async function resolveReportFiles(rawMessages, page, context) {
   if (typeof page.startNetworkCapture !== 'function' || typeof page.readNetworkCapture !== 'function') return;
 
   let fileCount = await openFilesInChatPanel(page);
   if (!fileCount) return;
 
   for (let index = 0; index < fileCount; index += 1) {
-    const fileEntry = await fetchAttachedFile(page, index);
-    if (fileEntry) {
-      rawMessages.push({ role: fileEntry.role, text: fileEntry.text, title: fileEntry.title });
+    const fileEntry = await fetchAttachedFile(page, index, Boolean(context.filesOutputDir));
+    // An upload already scraped as an <img> in its own message turn is listed
+    // here too; the in-turn one keeps its position in the transcript, so the
+    // panel duplicate is dropped rather than given a second id.
+    const isDuplicateImage =
+      fileEntry?.role === ATTACHMENT_KIND.IMAGE && hasImageForAsset(rawMessages, fileEntry.src);
+    if (fileEntry && !isDuplicateImage) {
+      rawMessages.push(
+        fileEntry.role === ATTACHMENT_KIND.IMAGE
+          ? imageAttachmentEntry(fileEntry, context)
+          : textAttachmentEntry(fileEntry, context)
+      );
     }
 
     if (index < fileCount - 1) {

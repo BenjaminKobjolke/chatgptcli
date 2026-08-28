@@ -23,7 +23,7 @@ describe('navigateAndWaitForMessages', () => {
     expect(gotoCalls[1]).toBe('https://chatgpt.com/c/abc123');
   });
 
-  test('polls until message nodes appear', async () => {
+  test('polls until turns appear and the count holds steady', async () => {
     let evaluateCalls = 0;
     const page = {
       goto: async () => {},
@@ -36,6 +36,24 @@ describe('navigateAndWaitForMessages', () => {
 
     await readHelpers.navigateAndWaitForMessages(page, 'https://chatgpt.com/c/abc123');
 
-    expect(evaluateCalls).toBe(3);
+    // Two zero reads, then 2 twice: a count is only trusted once it repeats.
+    expect(evaluateCalls).toBe(4);
+  });
+
+  // Regression test for a truncated scrape: the page keeps mounting turns for
+  // seconds after the first one appears, so stopping at the first non-zero
+  // count silently dropped the rest of the chat.
+  test('keeps polling while turns are still mounting', async () => {
+    const counts = [2, 4, 6, 8, 8];
+    let index = 0;
+    const page = {
+      goto: async () => {},
+      evaluate: async () => counts[Math.min(index++, counts.length - 1)],
+      wait: async () => {}
+    };
+
+    await readHelpers.navigateAndWaitForMessages(page, 'https://chatgpt.com/c/abc123');
+
+    expect(index).toBe(counts.length);
   });
 });

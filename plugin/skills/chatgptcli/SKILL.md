@@ -36,11 +36,14 @@ All commands print JSON by default; use `-f text` for plain text and relay that 
 |---|---|
 | "get / read the chatgpt chat" (current chat) | `chatgptcli.exe read -f text` |
 | "get the chat for <url or id>" | `chatgptcli.exe read <url-or-id> -f text` |
+| "get the deep research report" / "show the generated file" | `chatgptcli.exe read <url-or-id> -f text --files-inline` |
+| "download the images / attachments from the chat" | `chatgptcli.exe read <url-or-id> -f text --files-output "path\to\dir"` |
 | "ask chatgpt X" | `chatgptcli.exe ask "X" -f text` |
 | "ask chatgpt about file Y" / "send this file to chatgpt" | `chatgptcli.exe ask "question" --file "path\to\Y" -f text` |
 
 Notes:
 - `read` accepts a full `https://chatgpt.com/c/<id>` URL or the bare id.
+- `read` shows attachments as markers (`[image-01]`, `[report-01]`, `[file-01]`), not content. To get the actual content use `--files-inline` (report/file text in the transcript) or `--files-output <dir>` (writes every attachment to disk, images included, and turns each marker into a markdown link). `--file-id <id>` with `--files-output` downloads just one.
 - `ask` options: `--new` starts a fresh chat; `--timeout <seconds>` for long answers (default 120); `--file <path>` inlines a local text file's content into the prompt (UTF-8 text only, max 1 MB — no browser upload). Use an absolute or repo-relative path and quote it for PowerShell.
 - Quote the prompt for PowerShell; escape embedded double quotes.
 

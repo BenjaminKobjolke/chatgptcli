@@ -1,10 +1,19 @@
+import { mkdirSync } from 'node:fs';
 import { AppError, ERROR_CODE, EXIT_CODE } from '../core/errors.js';
 import { connectBridge, loadBrowserBridge } from '../core/opencli.js';
 import { resolveBridgeProfile } from '../core/settings.js';
-import { READ_SCRAPE_SCRIPT, REPORT_FRAME_SCRIPT } from './read_scrape.js';
+import { readScrapeScript, reportFrameScript } from './read_scrape.js';
 import { resolveReportFiles } from './read_files_panel.js';
+import {
+  ATTACHMENT_KIND,
+  downloadAttachments,
+  normalizeAttachments,
+  textAttachmentEntry
+} from './read_attachments.js';
 
-const MESSAGE_SELECTOR = '[data-message-author-role]';
+// Turn containers, not role nodes: an image-only assistant reply has no role
+// node, so counting role nodes underreports how much of the chat has mounted.
+const TURN_SELECTOR = '[data-testid^="conversation-turn"], [data-message-author-role]';
 const CHATGPT_ROOT_URL = 'https://chatgpt.com/';
 
 let openChatImpl = openChat;
@@ -46,7 +55,7 @@ function findReportFrame(frames, src) {
 // UI renders a few sibling iframes for its title/status chrome sharing the
 // same frame title, so a placeholder that resolves without a title is that
 // chrome, not the report body, and is left empty to be filtered out below.
-async function resolveReportFrames(rawMessages, page) {
+async function resolveReportFrames(rawMessages, page, context) {
   const placeholders = rawMessages.filter(
     (message) => message && message.role === 'report' && !message.text && message.reportFrameSrc
   );
@@ -57,13 +66,23 @@ async function resolveReportFrames(rawMessages, page) {
     const frame = findReportFrame(frames, placeholder.reportFrameSrc);
     if (!frame) continue;
 
-    const resolved = await page.evaluateInFrame(REPORT_FRAME_SCRIPT, frame.index);
+    const resolved = await page.evaluateInFrame(reportFrameScript(context.counters.image), frame.index);
     const title = resolved && typeof resolved.title === 'string' ? resolved.title : '';
     const text = resolved && typeof resolved.text === 'string' ? resolved.text : '';
-    if (title) {
-      placeholder.title = title;
-      placeholder.text = text;
+    if (!title) continue;
+
+    const images = Array.isArray(resolved.attachments) ? resolved.attachments : [];
+    context.counters.image += images.length;
+    // The report body lives in another origin, so its images can only be
+    // fetched from inside that same frame.
+    for (const image of images) {
+      image.frameIndex = frame.index;
     }
+
+    Object.assign(
+      placeholder,
+      textAttachmentEntry({ role: ATTACHMENT_KIND.REPORT, title, text }, context, images)
+    );
   }
 }
 
@@ -72,7 +91,9 @@ function normalizeEntry(value) {
   const role = typeof object.role === 'string' ? object.role : '';
   const text = typeof object.text === 'string' ? object.text : '';
   const title = typeof object.title === 'string' ? object.title : '';
-  return title ? { role, text, title } : { role, text };
+  const attachments = normalizeAttachments(object.attachments);
+  const entry = title ? { role, text, title } : { role, text };
+  return attachments.length ? { ...entry, attachments } : entry;
 }
 
 export function normalizeChatUrl(target) {
@@ -107,11 +128,17 @@ export function normalizeChatUrl(target) {
 async function navigateAndWaitForMessages(page, url) {
   await page.goto(CHATGPT_ROOT_URL, { settleMs: 1000 });
   await page.goto(url, { settleMs: 1500 });
-  // ponytail: fixed 10s poll for message nodes, no --timeout flag until someone needs it
+  // Waiting for the first message node is not enough: the page keeps mounting
+  // turns for seconds afterwards, and scraping early silently truncates the
+  // chat (confirmed live — a chat with 8 turns scraped as 5, losing every
+  // image-only reply). Poll until the count stops growing instead.
+  // ponytail: fixed 15s budget, no --timeout flag until someone needs it
   const startedAt = Date.now();
-  while (Date.now() - startedAt < 10000) {
-    const count = await page.evaluate(`document.querySelectorAll(${JSON.stringify(MESSAGE_SELECTOR)}).length`);
-    if (count > 0) break;
+  let previousCount = -1;
+  while (Date.now() - startedAt < 15000) {
+    const count = await page.evaluate(`document.querySelectorAll(${JSON.stringify(TURN_SELECTOR)}).length`);
+    if (count > 0 && count === previousCount) break;
+    previousCount = count;
     await page.wait(1);
   }
 }
@@ -153,12 +180,30 @@ export async function runSwitch(input) {
 
 export async function runRead(input) {
   return withOpenChat(input, async (page) => {
-    const result = await page.evaluate(READ_SCRAPE_SCRIPT);
+    const result = await page.evaluate(readScrapeScript(0));
     const rawMessages = Array.isArray(result?.messages) ? result.messages : [];
-    await resolveReportFrames(rawMessages, page);
-    await resolveReportFiles(rawMessages, page);
+    // Ids run per kind across the whole chat, but each browser context numbers
+    // its own images, so the running image count is handed to the next scrape.
+    const context = {
+      counters: { image: Number(result?.imageCount) || 0, report: 0, file: 0 },
+      filesInline: Boolean(input.filesInline)
+    };
+    await resolveReportFrames(rawMessages, page, context);
+    await resolveReportFiles(rawMessages, page, context);
 
-    const messages = rawMessages.map(normalizeEntry).filter((message) => message.text);
+    if (input.filesOutputDir) {
+      mkdirSync(input.filesOutputDir, { recursive: true });
+      await downloadAttachments({
+        page,
+        messages: rawMessages,
+        filesOutputDir: input.filesOutputDir,
+        fileId: input.fileId
+      });
+    }
+
+    const messages = rawMessages
+      .map(normalizeEntry)
+      .filter((message) => message.text || message.attachments?.length);
 
     if (input.format === 'text') {
       return {

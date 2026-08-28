@@ -1,4 +1,4 @@
-# Inline documents (Deep Research reports & generated files)
+# Inline documents and images (Deep Research reports, generated files, images)
 
 `chatgptcli read` scrapes the DOM of a chatgpt.com tab. Normally every turn is a
 `[data-message-author-role]` node and its `innerText` is the whole message. Two
@@ -20,6 +20,46 @@ This doc is the maintainer contract for that handling. Two independent
 mechanisms exist; only the first currently produces report bodies (see
 "Cross-origin iframe path" below for why the second is inert cover, kept
 per explicit decision rather than deleted).
+
+## Markers: inlining is opt-in
+
+A resolved attachment is **not** inlined by default. Each one gets an id —
+`image-NN`, `report-NN`, `file-NN`, numbered sequentially per kind across the
+chat — and the transcript carries a bare `[report-01]` marker where the
+attachment sits. The body travels on the entry's `attachments` record instead,
+so it reaches the caller only through:
+
+- `--files-inline` — print the report/file body in the transcript, the
+  behavior that used to be unconditional; or
+- `--files-output <dir>` — write it to `<dir>/<id><ext>` (`.md` for a report)
+  and rewrite the marker to `![report-01](<dir>/report-01.md)`.
+
+Images follow the same contract but have no inline form: `--files-output`
+downloads the bytes, and without it the marker is all the caller gets. An
+`<img>` counts as content only once it has loaded at 64x64 or larger —
+requiring real pixels is what keeps unloaded chrome (citation favicons, tool
+glyphs) from producing markers that appear on some runs and not others.
+
+**An image is usually not in its message turn at all.** Confirmed live: a
+screenshot attached to a user message renders no `<img>` inside
+`[data-message-author-role]`, and a generated image arrives as a turn that has
+no role node whatsoever — a chat with 8 `conversation-turn` containers exposed
+only 5 role nodes, with every 1254px image outside all of them. How much of
+that has mounted varies run to run, which is why `navigateAndWaitForMessages`
+waits for the turn count to stop growing rather than for the first turn, and
+why the panel — which does not depend on rendering at all — is the source of
+record for images. Panel images are appended as their own `image` entries;
+only an `<img>` genuinely inside a message keeps a positioned marker.
+The panel path therefore classifies each attachment by the **blob's own MIME
+type**, not its filename (an uploaded image's signed content URL carries no
+`fn=` param to judge), and an `image/*` body never goes down the text path,
+where it would decode to mojibake. The same upload can appear both ways; the
+panel copy is dropped when a message-turn `<img>` already carries the same
+`file_<hash>` asset id.
+
+The marker vocabulary (ids, `[id]`, `![id](path)`, the `/`-separated path)
+lives in `src/commands/read_attachments.js` and is shared by the in-page
+scrape, the panel resolver, and the download pass.
 
 ## Primary path: the "Files in chat" panel
 
@@ -123,6 +163,7 @@ for a plain generated file — see step 4 above.
 | `strong`, `b` | `**bold**` |
 | `em`, `i` | `*italic*` |
 | `br` | newline |
+| `img` (content image) | `[image-NN]` marker on its own line; UI chrome is dropped |
 | `ul`/`ol` > `li` | `- item` / `1. item` |
 | `table` | GitHub markdown table (header row, `---` separator, body rows) |
 | `pre` (plain) | fenced code block |
