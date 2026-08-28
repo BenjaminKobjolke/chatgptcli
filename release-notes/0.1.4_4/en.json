@@ -1,0 +1,13 @@
+{
+  "version": "0.1.4",
+  "build": 4,
+  "date": "2026-08-28",
+  "title": "Chat attachments: images, files and deep research reports",
+  "notes": [
+    "read now lists chat attachments as markers ([image-01], [report-01], [file-01]).",
+    "--files-inline puts deep research report and file text directly into the transcript.",
+    "--files-output <dir> downloads every attachment (images included) and links each marker; --file-id <id> downloads a single one.",
+    "read hard-reloads the chat before scraping so the 'Files in chat' panel is never stale.",
+    "Skipped downloads are reported on stderr and the resolved directory is echoed as filesOutputDir."
+  ]
+}
