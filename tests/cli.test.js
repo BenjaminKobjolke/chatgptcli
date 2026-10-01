@@ -6,8 +6,7 @@ import { runCli } from '../src/cli.js';
 import { __resetAskDepsForTest, __setAskDepsForTest } from '../src/commands/ask.js';
 import { __resetExecRunnerForTest, __setExecRunnerForTest } from '../src/core/opencli.js';
 import { __resetSetupDepsForTest, __setSetupDepsForTest } from '../src/commands/setup.js';
-import { __resetReadDepsForTest, __setReadDepsForTest } from '../src/commands/read.js';
-import { bindOriginalStdio, captureStderr, captureStdout, fakeReadPage, restoreStdio } from './test_helpers.js';
+import { bindOriginalStdio, captureStderr, captureStdout, restoreStdio } from './test_helpers.js';
 
 const originalStdio = bindOriginalStdio();
 
@@ -16,7 +15,6 @@ beforeEach(() => {
   __resetAskDepsForTest();
   __resetExecRunnerForTest();
   __resetSetupDepsForTest();
-  __resetReadDepsForTest();
 });
 
 afterEach(() => {
@@ -24,7 +22,6 @@ afterEach(() => {
   __resetAskDepsForTest();
   __resetExecRunnerForTest();
   __resetSetupDepsForTest();
-  __resetReadDepsForTest();
 });
 
 describe('cli', () => {
@@ -68,145 +65,6 @@ describe('cli', () => {
     expect(stdout.join('')).toContain('"status": "success"');
   });
 
-  test('read includes a deep research report entry as markdown', async () => {
-    __setReadDepsForTest({
-      openChat: async () => fakeReadPage({
-        url: 'https://chatgpt.com/c/abc',
-        messages: [
-          { role: 'user', text: 'Research X', title: '' },
-          { role: 'assistant', text: 'One moment.', title: '' },
-          { role: 'report', text: '# Report Title\n\nBody text.', title: 'Report Title' }
-        ]
-      })
-    });
-
-    const stdout = captureStdout();
-    const code = await runCli(['read', 'abc', '-f', 'json']);
-
-    expect(code).toBe(0);
-    const output = JSON.parse(stdout.join(''));
-    expect(output.count).toBe(3);
-    expect(output.messages[2]).toEqual({
-      role: 'report',
-      title: 'Report Title',
-      text: '# Report Title\n\nBody text.'
-    });
-  });
-
-  test('read text format renders a [report] block', async () => {
-    __setReadDepsForTest({
-      openChat: async () => fakeReadPage({
-        url: 'https://chatgpt.com/c/abc',
-        messages: [{ role: 'report', text: '# T\n\nBody', title: 'T' }]
-      })
-    });
-
-    const stdout = captureStdout();
-    const code = await runCli(['read', 'abc', '-f', 'text']);
-
-    expect(code).toBe(0);
-    expect(stdout.join('')).toBe('[report]\n# T\n\nBody\n');
-  });
-
-  test('read resolves a deep research report rendered in a cross-origin iframe', async () => {
-    const frameCalls = [];
-    __setReadDepsForTest({
-      openChat: async () => fakeReadPage(
-        {
-          url: 'https://chatgpt.com/c/abc',
-          messages: [
-            { role: 'user', text: 'Research X', title: '' },
-            {
-              role: 'report',
-              text: '',
-              title: '',
-              reportFrameSrc: 'https://connector-openai-deep-research.web-sandbox.oaiusercontent.com/r1'
-            }
-          ]
-        },
-        {
-          frames: async () => [
-            { index: 0, frameId: 'f0', url: 'https://connector-openai-deep-research.web-sandbox.oaiusercontent.com/r1', name: '' }
-          ],
-          evaluateInFrame: async (script, frameIndex) => {
-            frameCalls.push(frameIndex);
-            return { title: 'Report Title', text: '# Report Title\n\nBody text.' };
-          }
-        }
-      )
-    });
-
-    const stdout = captureStdout();
-    const code = await runCli(['read', 'abc', '-f', 'json']);
-
-    expect(code).toBe(0);
-    expect(frameCalls).toEqual([0]);
-    const output = JSON.parse(stdout.join(''));
-    expect(output.count).toBe(2);
-    expect(output.messages[1]).toEqual({
-      role: 'report',
-      title: 'Report Title',
-      text: '[report-01]',
-      attachments: [{ id: 'report-01', kind: 'report', name: 'Report Title' }]
-    });
-  });
-
-  test('read drops iframe placeholders that resolve to chrome UI, not the report body', async () => {
-    __setReadDepsForTest({
-      openChat: async () => fakeReadPage(
-        {
-          url: 'https://chatgpt.com/c/abc',
-          messages: [
-            { role: 'user', text: 'Research X', title: '' },
-            {
-              role: 'report',
-              text: '',
-              title: '',
-              reportFrameSrc: 'https://connector-openai-deep-research.web-sandbox.oaiusercontent.com/toolbar'
-            }
-          ]
-        },
-        {
-          frames: async () => [
-            { index: 0, frameId: 'f0', url: 'https://connector-openai-deep-research.web-sandbox.oaiusercontent.com/toolbar', name: '' }
-          ],
-          // No heading in this frame (it's the title/status chrome, not the report body).
-          evaluateInFrame: async () => ({ title: '', text: 'Research completed in 11m' })
-        }
-      )
-    });
-
-    const stdout = captureStdout();
-    const code = await runCli(['read', 'abc', '-f', 'json']);
-
-    expect(code).toBe(0);
-    const output = JSON.parse(stdout.join(''));
-    expect(output.count).toBe(1);
-    expect(output.messages).toEqual([{ role: 'user', text: 'Research X' }]);
-  });
-
-  test('read without a report stays byte-identical to the plain message shape', async () => {
-    __setReadDepsForTest({
-      openChat: async () => fakeReadPage({
-        url: 'https://chatgpt.com/c/abc',
-        messages: [
-          { role: 'user', text: 'hi', title: '' },
-          { role: 'assistant', text: 'hello', title: '' }
-        ]
-      })
-    });
-
-    const stdout = captureStdout();
-    const code = await runCli(['read', 'abc', '-f', 'json']);
-
-    expect(code).toBe(0);
-    const output = JSON.parse(stdout.join(''));
-    expect(output.messages).toEqual([
-      { role: 'user', text: 'hi' },
-      { role: 'assistant', text: 'hello' }
-    ]);
-  });
-
   test('doctor forwards to opencli doctor', async () => {
     const calls = [];
     __setExecRunnerForTest((cmd, args) => {
@@ -221,10 +79,16 @@ describe('cli', () => {
     expect(calls[0].args.slice(-3)).toEqual(['doctor', '--sessions', '--no-live']);
   });
 
+  function bridgeStatus(state, connected, stored) {
+    const profiles = connected.map((contextId) => ({ contextId, extensionConnected: true }));
+    return async () => ({ stored, health: { state, status: state === 'stopped' ? null : { profiles } } });
+  }
+
   test('setup checks prerequisites and prints guidance', async () => {
     __setSetupDepsForTest({
       runProcess: () => ({ status: 0, stdout: '1.3.5' }),
-      pathExists: () => true
+      pathExists: () => true,
+      bridgeStatus: bridgeStatus('stopped', [])
     });
 
     const stdout = captureStdout();
@@ -233,6 +97,48 @@ describe('cli', () => {
     expect(code).toBe(0);
     expect(stdout.join('')).toContain('[OK] Bun available (1.3.5)');
     expect(stdout.join('')).toContain('chatgptcli launch');
+  });
+
+  // The compiled exe bundles the bridge and needs no Bun: the on-disk checks
+  // resolve into its virtual filesystem and used to print four false [FAIL]s.
+  test('setup in the compiled exe skips the on-disk checks and reports the bridge', async () => {
+    __setSetupDepsForTest({
+      isCompiled: true,
+      runProcess: () => ({ status: 1 }),
+      pathExists: () => false,
+      bridgeStatus: bridgeStatus('ready', ['abc'])
+    });
+
+    const stdout = captureStdout();
+    const code = await runCli(['setup']);
+
+    expect(code).toBe(0);
+    expect(stdout.join('')).toContain('[OK] opencli Browser Bridge: bundled');
+    expect(stdout.join('')).toContain('[OK] Browser Bridge connected: abc');
+    expect(stdout.join('')).not.toContain('[FAIL]');
+    expect(stdout.join('')).not.toContain('Bun available');
+    expect(stdout.join('')).not.toContain('bun run');
+  });
+
+  test('setup names a stored bridge profile that is no longer connected', async () => {
+    __setSetupDepsForTest({ isCompiled: true, bridgeStatus: bridgeStatus('ready', ['abc'], 'old') });
+
+    const stdout = captureStdout();
+    const code = await runCli(['setup']);
+
+    expect(code).toBe(0);
+    expect(stdout.join('')).toContain('[OK] Browser Bridge connected: abc (stored default old is not connected)');
+    expect(stdout.join('')).toContain('chatgptcli switch-session');
+  });
+
+  test('setup fails when the bridge runs but no browser profile is connected', async () => {
+    __setSetupDepsForTest({ isCompiled: true, bridgeStatus: bridgeStatus('no-extension', []) });
+
+    const stdout = captureStdout();
+    const code = await runCli(['setup']);
+
+    expect(code).toBe(6);
+    expect(stdout.join('')).toContain('[FAIL] Browser Bridge: no browser profile connected');
   });
 
   test('setup rejects unknown options', async () => {
