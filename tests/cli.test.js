@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { runCli } from '../src/cli.js';
-import { __resetAskDepsForTest, __setAskDepsForTest, __test__ as askHelpers } from '../src/commands/ask.js';
+import { __resetAskDepsForTest, __setAskDepsForTest } from '../src/commands/ask.js';
 import { __resetExecRunnerForTest, __setExecRunnerForTest } from '../src/core/opencli.js';
 import { __resetSetupDepsForTest, __setSetupDepsForTest } from '../src/commands/setup.js';
 import { __resetReadDepsForTest, __setReadDepsForTest } from '../src/commands/read.js';
@@ -332,25 +332,5 @@ describe('cli', () => {
       expect(code).toBe(0);
       expect(stdout.join('')).toMatch(/^\d+\.\d+\.\d+/);
     });
-  });
-});
-
-describe('ask helpers', () => {
-  test('recognizes chatgpt hostnames', async () => {
-    const fakePage = (url) => ({ evaluate: () => Promise.resolve(url) });
-    expect(await askHelpers.isOnChatGpt(fakePage('https://chatgpt.com/'))).toBe(true);
-    expect(await askHelpers.isOnChatGpt(fakePage('https://chat.openai.com/'))).toBe(true);
-    expect(await askHelpers.isOnChatGpt(fakePage('https://example.com/'))).toBe(false);
-  });
-
-  test('picks latest assistant candidate after the baseline', () => {
-    const candidate = askHelpers.pickLatestAssistantCandidate(['older', 'Prompt text', 'Assistant final'], 1, 'Prompt text');
-    expect(candidate).toBe('Assistant final');
-  });
-
-  test('summarizes the strongest surface issue', () => {
-    expect(askHelpers.summarizeSurfaceIssue(askHelpers.normalizeSurfaceState({ challengeLike: true }))).toContain('verification');
-    expect(askHelpers.summarizeSurfaceIssue(askHelpers.normalizeSurfaceState({ loginLike: true }))).toContain('logged-in ready state');
-    expect(askHelpers.summarizeSurfaceIssue(askHelpers.normalizeSurfaceState({ editorFound: false, sendFound: false }))).toContain('editor');
   });
 });

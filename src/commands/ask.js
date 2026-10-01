@@ -4,9 +4,17 @@ import { resolveBridgeProfile } from '../core/settings.js';
 
 const CHATGPT_URL = 'https://chatgpt.com/';
 const EDITOR_SELECTOR = '.ProseMirror[role="textbox"]';
-const SEND_SELECTOR = '[data-testid="send-button"]';
-const STOP_SELECTOR = '[data-testid="stop-button"]';
-const ASSISTANT_SELECTOR = '[data-message-author-role="assistant"]';
+// Each selector lists the older testid markup first, then the redesigned one.
+const SEND_SELECTOR = '[data-testid="send-button"], form button[type="submit"]';
+const STOP_SELECTOR = '[data-testid="stop-button"], form button[aria-label^="Stop"]';
+const ASSISTANT_SELECTOR = '[data-message-author-role="assistant"], [data-content-search-unit-key$=":assistant"] [data-chatgpt-selection-message-id]';
+// In-page: every mounted assistant reply as { key, text }, keyed by message id so it survives a re-mount.
+const ASSISTANTS_EXPRESSION = `Array.from(document.querySelectorAll(${JSON.stringify(ASSISTANT_SELECTOR)}))
+  .map((node) => {
+    const text = ((node instanceof HTMLElement ? node.innerText : node.textContent) || '').trim();
+    return { key: node.getAttribute('data-chatgpt-selection-message-id') || node.getAttribute('data-message-id') || text, text };
+  })
+  .filter((entry) => entry.text)`;
 const RETRYABLE_PREFIXES = ['[BLOCKED]', '[NO RESPONSE]', '[SEND FAILED]'];
 const BLOCKED_PREFIX = '[BLOCKED]';
 const NO_RESPONSE_PREFIX = '[NO RESPONSE]';
@@ -128,7 +136,7 @@ async function askOnPage(page, input) {
     return blocked(summarizeSurfaceIssue(surface));
   }
 
-  const baselineAssistants = await getAssistantTexts(page);
+  const baselineKeys = new Set(normalizeAssistants(await page.evaluate(ASSISTANTS_EXPRESSION)).map((entry) => entry.key));
   const sendResult = await injectAndSend(page, input.prompt);
   if (!sendResult.ok) {
     return { response: `${SEND_FAILED_PREFIX} ${sendResult.reason}` };
@@ -137,7 +145,7 @@ async function askOnPage(page, input) {
   const result = await waitForAssistantResponse(page, {
     prompt: input.prompt,
     timeoutMs: input.timeoutMs,
-    baselineCount: baselineAssistants.length
+    baselineKeys
   });
 
   if (isSuccessfulResponse(result.response)) {
@@ -182,17 +190,6 @@ async function waitForSurface(page, timeoutMs) {
   }
 
   return latest;
-}
-
-async function getAssistantTexts(page) {
-  const result = await page.evaluate(`(() => {
-    return Array.from(document.querySelectorAll(${JSON.stringify(ASSISTANT_SELECTOR)}))
-      .map((node) => (node instanceof HTMLElement ? node.innerText : node?.textContent || ''))
-      .map((text) => (typeof text === 'string' ? text.trim() : ''))
-      .filter(Boolean);
-  })()`);
-
-  return Array.isArray(result) ? result.map((item) => String(item).trim()).filter(Boolean) : [];
 }
 
 async function injectAndSend(page, prompt) {
@@ -255,10 +252,7 @@ async function waitForAssistantResponse(page, input) {
   while (Date.now() - startedAt < input.timeoutMs) {
     await page.wait(2);
     const probe = await page.evaluate(`(() => {
-      const assistants = Array.from(document.querySelectorAll(${JSON.stringify(ASSISTANT_SELECTOR)}))
-        .map((node) => (node instanceof HTMLElement ? node.innerText : node?.textContent || ''))
-        .map((text) => (typeof text === 'string' ? text.trim() : ''))
-        .filter(Boolean);
+      const assistants = ${ASSISTANTS_EXPRESSION};
       const streaming = Boolean(document.querySelector(${JSON.stringify(STOP_SELECTOR)}));
       const bodyText = (document.body?.innerText || '').trim().slice(0, 4000);
       return {
@@ -269,13 +263,12 @@ async function waitForAssistantResponse(page, input) {
       };
     })()`);
 
-    const response = pickLatestAssistantCandidate(probe.assistants, input.baselineCount, input.prompt);
-    if (response) {
-      lastResponse = response;
-      if (!probe.streaming) {
-        return { response };
-      }
+    const response = pickLatestAssistantCandidate(probe.assistants, input.baselineKeys, input.prompt);
+    // The stop selector has drifted before, so a reply must also hold still for one full poll.
+    if (response && !probe.streaming && response === lastResponse) {
+      return { response };
     }
+    lastResponse = response || lastResponse;
 
     if (probe.loginLike || probe.challengeLike) {
       return blocked('ChatGPT page fell back to a login or verification gate while waiting for the response.');
@@ -324,13 +317,19 @@ function normalizeResponse(value) {
   return typeof value === 'string' ? value.trim() : '';
 }
 
-function pickLatestAssistantCandidate(assistants, baselineCount, prompt) {
+function normalizeAssistants(value) {
+  return (Array.isArray(value) ? value : [])
+    .map((entry) => ({ key: String(entry?.key ?? ''), text: normalizeResponse(entry?.text) }))
+    .filter((entry) => entry.text);
+}
+
+function pickLatestAssistantCandidate(assistants, baselineKeys, prompt) {
   const normalizedPrompt = normalizeResponse(prompt);
-  const fresh = assistants.slice(Math.max(0, baselineCount)).map(normalizeResponse).filter(Boolean);
+  const fresh = normalizeAssistants(assistants).filter((entry) => !baselineKeys.has(entry.key));
 
   for (let i = fresh.length - 1; i >= 0; i -= 1) {
-    if (fresh[i] !== normalizedPrompt) {
-      return fresh[i];
+    if (fresh[i].text !== normalizedPrompt) {
+      return fresh[i].text;
     }
   }
 
@@ -392,6 +391,7 @@ function renderResult(result, format) {
 export const __test__ = {
   isOnChatGpt,
   pickLatestAssistantCandidate,
+  waitForAssistantResponse,
   normalizeSurfaceState,
   summarizeSurfaceIssue,
   isSuccessfulResponse,
