@@ -1,0 +1,13 @@
+{
+  "version": "0.1.5",
+  "build": 5,
+  "date": "2026-10-01",
+  "title": "Complete transcripts: read uses the backend conversation",
+  "notes": [
+    "read takes the full transcript from the chat's backend conversation instead of the virtualized page, so long chats are no longer cut to their tail.",
+    "Deep research reports and generated files come from the conversation data and appear at their position in the chat.",
+    "read is much faster on chats with many files or images: Files-panel entries that are already known are skipped.",
+    "ask follows ChatGPT's redesigned send, stop and reply markup.",
+    "setup verifies the Browser Bridge connection and no longer reports false failures in the compiled exe."
+  ]
+}
