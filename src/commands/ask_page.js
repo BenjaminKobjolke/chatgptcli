@@ -1,0 +1,287 @@
+// The in-page half of `ask`: everything that drives or reads the chatgpt.com tab.
+// Retry policy and output rendering live in ask.js.
+import { CHATGPT_ROOT_URL, isChatHost } from '../core/chatgpt_site.js';
+
+const EDITOR_SELECTOR = '.ProseMirror[role="textbox"]';
+// Each selector lists the older testid markup first, then the redesigned one.
+const SEND_SELECTOR = '[data-testid="send-button"], form button[type="submit"]';
+// Confirmed live mid-stream: the redesigned stop button is a `type="button"` with `aria-label="Stop"` and no testid.
+const STOP_SELECTOR ='[data-testid="stop-button"], form button[aria-label^="Stop"]';
+const ASSISTANT_SELECTOR = '[data-message-author-role="assistant"], [data-content-search-unit-key$=":assistant"] [data-chatgpt-selection-message-id]';
+// In-page: every mounted assistant reply as { key, text }, keyed by message id so it survives a re-mount.
+const ASSISTANTS_EXPRESSION = `Array.from(document.querySelectorAll(${JSON.stringify(ASSISTANT_SELECTOR)}))
+  .map((node) => {
+    const text = ((node instanceof HTMLElement ? node.innerText : node.textContent) || '').trim();
+    return { key: node.getAttribute('data-chatgpt-selection-message-id') || node.getAttribute('data-message-id') || text, text };
+  })
+  .filter((entry) => entry.text)`;
+const RETRYABLE_PREFIXES = ['[BLOCKED]', '[NO RESPONSE]', '[SEND FAILED]'];
+const BLOCKED_PREFIX = '[BLOCKED]';
+const NO_RESPONSE_PREFIX = '[NO RESPONSE]';
+const SEND_FAILED_PREFIX = '[SEND FAILED]';
+const LOGIN_HINTS = [
+  'log in',
+  'login',
+  'sign in',
+  'continue with google',
+  '登录',
+  '登入'
+];
+const CHALLENGE_HINTS = [
+  'captcha',
+  'verify you are human',
+  'human verification',
+  'access denied',
+  'one more step',
+  '请先验证',
+  '人机验证'
+];
+export async function askOnPage(page, input) {
+  let surface = await ensureReadySurface(page, input.newChat);
+  if (!surface.editorReady || surface.loginLike || surface.challengeLike) {
+    return blocked(summarizeSurfaceIssue(surface));
+  }
+
+  const baselineKeys = new Set(normalizeAssistants(await page.evaluate(ASSISTANTS_EXPRESSION)).map((entry) => entry.key));
+  const sendResult = await injectAndSend(page, input.prompt);
+  if (!sendResult.ok) {
+    return { response: `${SEND_FAILED_PREFIX} ${sendResult.reason}` };
+  }
+
+  const result = await waitForAssistantResponse(page, {
+    prompt: input.prompt,
+    timeoutMs: input.timeoutMs,
+    baselineKeys
+  });
+
+  if (isSuccessfulResponse(result.response)) {
+    return result;
+  }
+
+  surface = await probeChatGptSurface(page);
+  if (surface.loginLike || surface.challengeLike) {
+    return blocked(summarizeSurfaceIssue(surface));
+  }
+
+  return result;
+}
+
+async function ensureReadySurface(page, newChat) {
+  if (newChat || !(await isOnChatGpt(page))) {
+    await page.goto(CHATGPT_ROOT_URL, { settleMs: 1500 });
+    await page.wait(2);
+  }
+
+  let surface = await waitForSurface(page, 8000);
+
+  if (!surface.editorReady && !surface.loginLike && !surface.challengeLike) {
+    await page.goto(CHATGPT_ROOT_URL, { settleMs: 1500 });
+    await page.wait(2);
+    surface = await waitForSurface(page, 8000);
+  }
+
+  return surface;
+}
+
+async function waitForSurface(page, timeoutMs) {
+  const startedAt = Date.now();
+  let latest = normalizeSurfaceState({});
+
+  while (Date.now() - startedAt < timeoutMs) {
+    latest = await probeChatGptSurface(page);
+    if (latest.editorReady || latest.loginLike || latest.challengeLike) {
+      return latest;
+    }
+    await page.wait(1);
+  }
+
+  return latest;
+}
+
+async function injectAndSend(page, prompt) {
+  const focused = await page.evaluate(`(() => {
+    const editor = document.querySelector(${JSON.stringify(EDITOR_SELECTOR)});
+    if (!(editor instanceof HTMLElement)) return { ok: false, reason: 'ChatGPT editor not found.' };
+    editor.focus();
+    editor.click();
+    return { ok: true };
+  })()`);
+
+  if (!focused?.ok) {
+    return { ok: false, reason: focused?.reason || 'ChatGPT editor not focusable.' };
+  }
+
+  if (page.insertText) {
+    await page.insertText(prompt);
+  } else {
+    await page.evaluate(`(() => {
+      const editor = document.querySelector(${JSON.stringify(EDITOR_SELECTOR)});
+      if (!(editor instanceof HTMLElement)) return { ok: false };
+      document.execCommand('insertText', false, ${JSON.stringify(prompt)});
+      return { ok: true };
+    })()`);
+  }
+
+  await page.wait(1);
+
+  const sendState = await page.evaluate(`(() => {
+    const editor = document.querySelector(${JSON.stringify(EDITOR_SELECTOR)});
+    const send = document.querySelector(${JSON.stringify(SEND_SELECTOR)});
+    return {
+      editorText: editor instanceof HTMLElement ? (editor.innerText || '').trim() : '',
+      sendReady: send instanceof HTMLButtonElement ? !send.disabled : false
+    };
+  })()`);
+
+  if (!sendState?.editorText) {
+    return { ok: false, reason: 'Prompt was not inserted into the ChatGPT editor.' };
+  }
+
+  if (!sendState.sendReady) {
+    return { ok: false, reason: 'ChatGPT send button never became enabled.' };
+  }
+
+  const clickResult = await page.evaluate(`(() => {
+    const send = document.querySelector(${JSON.stringify(SEND_SELECTOR)});
+    if (!(send instanceof HTMLButtonElement)) return { ok: false, reason: 'ChatGPT send button not found.' };
+    send.click();
+    return { ok: true };
+  })()`);
+
+  return clickResult?.ok ? { ok: true } : { ok: false, reason: clickResult?.reason || 'ChatGPT send click failed.' };
+}
+
+async function waitForAssistantResponse(page, input) {
+  const startedAt = Date.now();
+  let lastResponse = '';
+
+  while (Date.now() - startedAt < input.timeoutMs) {
+    await page.wait(2);
+    const probe = await page.evaluate(`(() => {
+      const assistants = ${ASSISTANTS_EXPRESSION};
+      const streaming = Boolean(document.querySelector(${JSON.stringify(STOP_SELECTOR)}));
+      const bodyText = (document.body?.innerText || '').trim().slice(0, 4000);
+      return {
+        assistants,
+        streaming,
+        loginLike: ${JSON.stringify(LOGIN_HINTS)}.some((hint) => bodyText.toLowerCase().includes(hint)),
+        challengeLike: ${JSON.stringify(CHALLENGE_HINTS)}.some((hint) => bodyText.toLowerCase().includes(hint))
+      };
+    })()`);
+
+    const response = pickLatestAssistantCandidate(probe.assistants, input.baselineKeys, input.prompt);
+    // The stop selector has drifted before, so a reply must also hold still for one full poll.
+    if (response && !probe.streaming && response === lastResponse) {
+      return { response };
+    }
+    lastResponse = response || lastResponse;
+
+    if (probe.loginLike || probe.challengeLike) {
+      return blocked('ChatGPT page fell back to a login or verification gate while waiting for the response.');
+    }
+  }
+
+  return { response: lastResponse || NO_RESPONSE_PREFIX };
+}
+
+async function probeChatGptSurface(page) {
+  const result = await page.evaluate(`(() => {
+    const bodyText = (document.body?.innerText || '').trim().slice(0, 4000);
+    const normalized = bodyText.toLowerCase();
+    const editor = document.querySelector(${JSON.stringify(EDITOR_SELECTOR)});
+    const send = document.querySelector(${JSON.stringify(SEND_SELECTOR)});
+    return {
+      url: location.href,
+      editorFound: editor instanceof HTMLElement,
+      sendFound: send instanceof HTMLButtonElement,
+      sendDisabled: send instanceof HTMLButtonElement ? send.disabled : false,
+      loginLike: ${JSON.stringify(LOGIN_HINTS)}.some((hint) => normalized.includes(hint)),
+      challengeLike: ${JSON.stringify(CHALLENGE_HINTS)}.some((hint) => normalized.includes(hint))
+    };
+  })()`);
+
+  return normalizeSurfaceState(result);
+}
+
+async function isOnChatGpt(page) {
+  const url = await page.evaluate('window.location.href').catch(() => '');
+  if (typeof url !== 'string' || !url) return false;
+
+  try {
+    return isChatHost(new URL(url).hostname);
+  } catch {
+    return false;
+  }
+}
+
+function blocked(message) {
+  return { response: `${BLOCKED_PREFIX} ${message}` };
+}
+
+export function normalizeResponse(value) {
+  return typeof value === 'string' ? value.trim() : '';
+}
+
+function normalizeAssistants(value) {
+  return (Array.isArray(value) ? value : [])
+    .map((entry) => ({ key: String(entry?.key ?? ''), text: normalizeResponse(entry?.text) }))
+    .filter((entry) => entry.text);
+}
+
+function pickLatestAssistantCandidate(assistants, baselineKeys, prompt) {
+  const normalizedPrompt = normalizeResponse(prompt);
+  const fresh = normalizeAssistants(assistants).filter((entry) => !baselineKeys.has(entry.key));
+
+  for (let i = fresh.length - 1; i >= 0; i -= 1) {
+    if (fresh[i].text !== normalizedPrompt) {
+      return fresh[i].text;
+    }
+  }
+
+  return '';
+}
+
+function normalizeSurfaceState(value) {
+  const object = value && typeof value === 'object' ? value : {};
+  return {
+    url: typeof object.url === 'string' ? object.url : '',
+    editorFound: Boolean(object.editorFound),
+    sendFound: Boolean(object.sendFound),
+    sendDisabled: Boolean(object.sendDisabled),
+    editorReady: Boolean(object.editorFound),
+    loginLike: Boolean(object.loginLike),
+    challengeLike: Boolean(object.challengeLike)
+  };
+}
+
+function summarizeSurfaceIssue(state) {
+  if (state.challengeLike) {
+    return 'ChatGPT page is blocked by a verification or access challenge.';
+  }
+  if (state.loginLike) {
+    return 'ChatGPT page is not in a logged-in ready state.';
+  }
+  if (!state.editorFound) {
+    return 'ChatGPT composer editor was not found.';
+  }
+  if (!state.sendFound) {
+    return 'ChatGPT send button was not found.';
+  }
+  return 'ChatGPT composer never reached a ready state.';
+}
+
+export function isSuccessfulResponse(response) {
+  return Boolean(response) && !RETRYABLE_PREFIXES.some((prefix) => response.startsWith(prefix));
+}
+
+export function shouldRetry(response) {
+  return RETRYABLE_PREFIXES.some((prefix) => response.startsWith(prefix));
+}
+
+export const __test__ = {
+  isOnChatGpt,
+  pickLatestAssistantCandidate,
+  waitForAssistantResponse,
+  normalizeSurfaceState,
+  summarizeSurfaceIssue
+};

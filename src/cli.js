@@ -32,21 +32,15 @@ export async function runCli(argv) {
     }
 
     if (command === 'ask') {
-      const result = await runAsk(parseAskArgs(argv.slice(1)));
-      writeStdout(result.output);
-      return result.exitCode;
+      return emitResult(await runAsk(parseAskArgs(argv.slice(1))));
     }
 
     if (command === 'read') {
-      const result = await runRead(parseReadArgs(argv.slice(1)));
-      writeStdout(result.output);
-      return result.exitCode;
+      return emitResult(await runRead(parseReadArgs(argv.slice(1))));
     }
 
     if (command === 'switch') {
-      const result = await runSwitch(parseSwitchArgs(argv.slice(1)));
-      writeStdout(result.output);
-      return result.exitCode;
+      return emitResult(await runSwitch(parseSwitchArgs(argv.slice(1))));
     }
 
     if (command === 'doctor') {
@@ -54,7 +48,7 @@ export async function runCli(argv) {
     }
 
     if (command === 'setup') {
-      return runSetup(parseSetupArgs(argv.slice(1)));
+      return await runSetup(parseSetupArgs(argv.slice(1)));
     }
 
     if (command === 'set-chrome') {
@@ -112,9 +106,15 @@ function helpText() {
     '  ask always uses chatgpt.com web UI, not the OpenAI API.',
     '  ask reuses the site:chatgpt browser session and retries blocked or empty responses with a fresh chat fallback.',
     '  read shows attachments as [image-01]/[report-01] markers; --files-output <dir> downloads them, --files-inline prints report and file bodies instead.',
-    '  setup validates local prerequisites and prints browser-extension/login guidance.',
+    '  setup validates local prerequisites and the Browser Bridge connection, and prints browser-extension/login guidance.',
     '  Requires the opencli Browser Bridge and a browser profile that has already logged into chatgpt.com at least once.'
   ].join('\n');
+}
+
+// `ask`, `read` and `switch` hand back `{ output, exitCode }` instead of printing themselves.
+function emitResult(result) {
+  writeStdout(result.output);
+  return result.exitCode;
 }
 
 function writeStdout(message) {

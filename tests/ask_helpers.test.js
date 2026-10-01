@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { __test__ as askHelpers } from '../src/commands/ask.js';
+import { __test__ as askHelpers } from '../src/commands/ask_page.js';
 
 describe('ask helpers', () => {
   test('recognizes chatgpt hostnames', async () => {
