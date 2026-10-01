@@ -53,10 +53,43 @@ script: `GET /api/auth/session` for the bearer token, then
   pointer for a signed URL through `/backend-api/files/download/<id>` — only
   under `--files-output`, since it costs one request per image.
 
+- A **Deep Research report** is not a file reference in the JSON. Its whole
+  markdown body sits in the `tool` message that rendered the report card:
+  `metadata.chatgpt_sdk.widget_state` is a JSON *string* whose
+  `report_message.content.parts[0]` is the report (confirmed live: byte-identical
+  to what the panel path downloads). It becomes a `report` entry at that
+  message's position, with no request at all. Its title is the body's first
+  `# ` heading — the one ChatGPT shows; `plan.title` in the same state is only
+  the research plan's working title.
+- A **generated file** has no `file_<id>` anywhere in the JSON (confirmed live).
+  The reply that offers it links its sandbox path — `sandbox:/mnt/data/<name>` —
+  and `GET /backend-api/conversation/<id>/interpreter/download?message_id=<message.id>&sandbox_path=<path>`
+  answers with the same `{ download_url, file_name }` shape as the files
+  endpoint, so `fetchSignedContent` reads it unchanged. It becomes a `file`
+  entry right after that reply. A path linked twice in one reply resolves once.
+
+Both are found by `conversationMessages` as empty placeholders and filled by
+`resolvePendingAttachments`, which read.js calls once it owns the id counters.
+A sandbox link that no longer resolves leaves its placeholder empty, and the
+entry drops out like any other empty one. The fetch-and-classify code is shared
+with the panel path in `src/commands/read_file_content.js`.
+
 `readConversation` returns `null` when the fetch does not come back as a 200
 with a `mapping`; `runRead` then falls back to the DOM scrape, which is why the
-sections below still describe it. Generated files and Deep Research reports are
-not resolved from the JSON — they still come from the "Files in chat" panel.
+sections below still describe it.
+
+**The "Files in chat" panel still runs after the JSON**, as the net for what the
+JSON path does not explain (a canvas, an uploaded text file, a file whose
+sandbox link has expired). It clicks only entries whose label is not already an
+attachment name in the transcript. On the image and file chats measured that is
+no click at all; a report is still clicked once, because the panel lists it
+under a label that is not its title, and is then dropped as a duplicate:
+
+| Chat | Before | After |
+|---|---|---|
+| 5 uploaded images, one generated file listed twice | ~45 s | ~16 s |
+| 35 images, 28 of them generated | 5 min 7 s | ~15 s |
+| one Deep Research report | ~13 s | 15-29 s (one click, same as before) |
 
 An empty transcript is an error (`API_ERROR`, exit 5). It used to be
 `ok: true, count: 0`, which is how the DOM change went unnoticed.
@@ -126,7 +159,8 @@ no-op (no reload), and a stale already-open tab was confirmed live to leave the
 earlier hover-based theory for that flakiness (`:hover`-gated button, needs a
 real mouse move) was tested live and refuted — the button is present
 immediately after a hard reload with zero hover. Do not remove the root-URL hop
-to "simplify" this; see `PLAN.md` session 4 for the live A/B evidence.
+to "simplify" this: a live A/B run against the same chat showed the panel missing
+without the hop and present with it.
 
 That applies to the **no-argument** `read` too, which reads whatever chat the
 tab already shows. It used to skip the reload entirely — and confirmed live on a
@@ -156,7 +190,20 @@ itself stays functional throughout):
    button can be in the DOM before its handler is attached — the opener is
    re-fired for as long as no `[role="menu"]` shows. Then poll for
    `[aria-label="Files in chat"] li button` entries until the count repeats:
-   the list streams in (confirmed live: 2 entries, then 7).
+   the list streams in (confirmed live: 2 entries, then 7). Each entry button's
+   `aria-label` is the file name; the poll returns those labels.
+   **An entry whose outcome is already known is skipped** — every click costs a
+   menu reopen, the click and a network poll (~5-9 s). Skipped are: an entry
+   whose label is the `name` of an attachment the transcript already holds; any
+   entry with an image extension once the conversation JSON has positioned the
+   images (a generated image has no name to match — 35 of them cost a 5 minute
+   read before this rule); and an entry whose label was already handled earlier
+   in the same walk. The match is by name because an entry exposes nothing
+   else — no id, no thumbnail (confirmed live). So a second, different upload
+   reusing a file name is skipped too, and so is an image that exists only as a
+   download link. On the DOM fallback nothing is known, so nothing is skipped.
+   A report the JSON already delivered but the panel lists under another label
+   is clicked once and then dropped, recognized by its identical body.
 2. `startNetworkCapture('')`, click file entry `i`, poll `readNetworkCapture()`
    for a request whose `url` contains `/backend-api/files/download/` — this is
    the only way to learn the file's real `file_<id>` and the bearer token
@@ -189,12 +236,15 @@ itself stays functional throughout):
    Either entry shape is appended to the message list (not interleaved by
    conversation position — see "Known-brittle bits").
    A file the panel lists twice fires no second download request (the page
-   has it cached), so the repeat entry times out after the poll budget and is
-   dropped — about 10 s spent per repeat.
+   has it cached); clicking the repeat would time out after the poll budget,
+   about 10 s — which is why a repeated label is skipped in step 1.
 5. `button[aria-label="Close viewer"]` (formerly `"Close fullscreen view"`) is clicked before moving to the
    next file (or returning). This drives the **user's real, already-open**
    Chrome tab — leaving it stuck in the fullscreen artifact viewer after a
-   `read` call is a visible side effect the user did not ask for.
+   `read` call is a visible side effect the user did not ask for. When every
+   entry was skipped no viewer ever replaced the panel, so the panel itself is
+   closed through `aside button[aria-label="Close panel"]` (confirmed live; it
+   ignores Escape).
 
 ## Cross-origin iframe path (inert — kept as cover, not deleted)
 
@@ -202,7 +252,7 @@ An earlier attempt tried to read the report directly out of its rendering
 iframe. It is proven **non-functional** against this project's browser bridge
 and is retained only as a no-op fallback (explicit decision: not worth the risk
 of deleting working-adjacent code for a bridge behavior that could change
-upstream) — see `PLAN.md` for the full investigation.
+upstream).
 
 1. **Top frame** (`READ_SCRAPE_SCRIPT` in `read_scrape.js`): selector
    `[data-message-author-role], [class*="_reportPage_"], iframe[title="internal://deep-research"]`.
@@ -214,7 +264,7 @@ upstream) — see `PLAN.md` for the full investigation.
 2. **Frame resolution** (`resolveReportFrames` in `read.js`): matches each
    placeholder's `reportFrameSrc` against `page.frames()`. Against the real
    bridge, `page.frames()` always returns `[]` for cross-origin iframes (a CDP
-   limitation of this bridge's tab-scoped attach model — see `PLAN.md`), so
+   limitation of this bridge's tab-scoped attach model), so
    this never resolves; the placeholder stays empty and drops out via the
    final `.filter(message => message.text)`.
 
@@ -293,26 +343,32 @@ pre-built anywhere in that payload. A `libfile_id` variant of the simple
 two-hop `files/download` flow (`.../libfile_.../download`, `/content`, bare)
 was tried and 404/405/404s — no shortcut there either.
 
-**Untried, and the recommended next step if this gap needs closing**: the
-inline report card's own Export → Export to Markdown flow (see "Session 2" in
-`PLAN.md` — proven end-to-end for a *different* file, real download to disk)
-against a file that 403s via the conversation-scoped endpoint. Full detail and
-the corrected write-up: `PLAN.md` session 4.
+**Probably closed by the JSON path, unverified**: a report's body now comes out
+of the conversation JSON without touching `files/download` at all, so the 403
+should no longer matter — but the chat that showed it has not been re-read.
+
+**Untried, and the fallback if that turns out wrong**: the
+inline report card's own Export → Export to Markdown flow (proven end-to-end
+for a *different* file, real download to disk) against a file that 403s via
+the conversation-scoped endpoint.
 
 ## Known-brittle bits
 
 - **"View files in chat" menu item has no stable selector.** No
   `data-testid`, no `aria-label` — matched by exact `textContent`. If ChatGPT
   ever localizes or renames this menu item, `openFilesInChatPanel` in
-  `src/commands/read.js` returns 0 (silently no report), the same failure mode
+  `src/commands/read_files_panel.js` returns no entries (silently no report), the same failure mode
   as the old iframe path had before this feature existed. Re-inspect the
   "More" menu's live markup first if reports silently vanish again.
-- **Report entries are appended, not interleaved.** `resolveReportFiles`
-  discovers reports independently of the top-frame scrape's DOM order (the
-  iframe placeholders it could otherwise position against are inert — see
-  above) and appends them to the end of the message list in files-panel order.
-  In a chat with multiple reports interspersed with other turns, output order
-  will not exactly match conversation order.
+- **Panel-found entries are appended, not interleaved.** Reports and files
+  taken from the conversation JSON sit at their position in the chat. Whatever
+  only `resolveReportFiles` finds (the DOM fallback, or a file the JSON path
+  could not resolve) is still appended to the end of the message list in
+  files-panel order.
+- **Sandbox links.** A generated file is recognized by a `sandbox:/mnt/data/…`
+  link in the reply text. A file ChatGPT creates without linking it that way is
+  left to the panel. How long a sandbox path keeps resolving is unknown; a
+  3-day-old one did.
 - **Backend-api coupling.** The `/api/auth/session` and
   `/backend-api/conversation/<id>` endpoints and the `mapping` / `current_node`
   shape behind the message source, the `/backend-api/files/download/` and

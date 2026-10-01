@@ -83,8 +83,8 @@ Text: `[role]` header followed by the message body, blank line between messages.
 
 - The transcript is the branch of the chat currently shown: answers abandoned by regenerating or editing are not included. Reasoning, tool calls and web-search chatter are left out, and citation markers are stripped.
 - A chat that yields no messages at all is an error (`API_ERROR`, exit 5), not an empty success — it means the tab is not logged in, is not on a chat, or ChatGPT changed underneath the tool.
-- Uploaded and generated images get their marker at the real position in the message that carries them. Generated files and Deep Research reports are found through the "Files in chat" panel and appended as their own entries after the messages; a panel image that duplicates one already in a message is dropped rather than given a second id.
-- The panel is walked one file at a time, a few seconds each, so a chat with many attachments reads noticeably slower than one without.
+- Uploaded and generated images get their marker at the real position in the message that carries them. A Deep Research report is its own `report` entry where it appeared in the chat, and a generated file is a `file` entry right after the reply that links it. All three come from the conversation JSON.
+- The "Files in chat" panel is still checked afterwards for anything the JSON did not explain (a canvas, an uploaded text file); what it finds is appended after the messages. It opens only entries not already in the transcript — each costs a few seconds — so a typical read takes about 15 seconds whatever the number of attachments.
 - If the conversation JSON cannot be fetched, `read` falls back to scraping the rendered page. That fallback only sees the turns currently mounted, so a long chat comes back truncated to its tail.
 - Ids are assigned per read. Take the id from the same run's output before passing it to `--file-id`.
 - A download that fails — an expired signed URL, a blocked host — leaves the bare marker in place and the read still succeeds; the skipped attachment is named on stderr.

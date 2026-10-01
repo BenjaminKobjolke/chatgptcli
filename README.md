@@ -99,7 +99,7 @@ This validates:
 - `chatgptcli ask` uses the ChatGPT web app, not the OpenAI API.
 - `chatgptcli ask` talks directly to `opencli`'s `BrowserBridge`; it does not rely on the desktop-only `opencli chatgpt` adapter.
 - `chatgptcli doctor` forwards to `opencli doctor`.
-- `chatgptcli setup` is a local preflight checker and does not change the browser-backed execution model.
+- `chatgptcli setup` is a preflight checker: local prerequisites plus whether a browser profile is connected to the Browser Bridge. It changes nothing.
 - By default, `chatgptcli` looks for `opencli` in `.omx/reference/opencli`.
 - If your `opencli` lives somewhere else, set `CHATGPTCLI_OPENCLI_ROOT=/path/to/opencli`.
 - If you want to point directly at a built entry file, set `CHATGPTCLI_OPENCLI_MAIN=/path/to/opencli/dist/src/main.js`.

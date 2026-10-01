@@ -2,8 +2,9 @@
 
 Hazards and techniques for debugging this tool's browser-automation commands
 (`read`, `ask`, `switch`) against the real chatgpt.com — distilled from live
-investigation sessions (see `PLAN.md` for the raw log, `docs/INLINE_DOCUMENTS_AND_IMAGES.md`
-for the report/file-resolution contract specifically).
+investigation sessions (see `docs/INLINE_DOCUMENTS_AND_IMAGES.md` for the
+report/file-resolution contract specifically). The raw investigation log was never
+committed; its conclusions are written out in these two files.
 
 ## Safety hazards — read first
 
@@ -86,13 +87,14 @@ Recipe used to find the generated-file content shape (full writeup:
 |---|---|---|
 | `/backend-api/files/download/file_<id>?conversation_id=...` | yes | `{ download_url, ... }` (signed redirect, no content yet) |
 | `/backend-api/estuary/content?id=...&sig=...` | no (`sig=` self-authenticates) | actual file content — JSON for Deep Research reports, raw `text/markdown` for plain generated files |
-| `/backend-api/conversation/{id}/interpreter/download?message_id=...&sandbox_path=...` | yes | raw file bytes via the code-interpreter sandbox path — a **separate** mechanism from the `file_<id>` path above, fired by the inline attachment card's own click handler |
+| `/backend-api/conversation/{id}/interpreter/download?message_id=...&sandbox_path=...` | yes | `{ download_url, file_name, ... }`, the same shape as `files/download` — a **separate** mechanism from the `file_<id>` path above, fired by the inline attachment card's own click handler. Used by `read` for generated files |
+| `/backend-api/conversation/{id}` | yes | the whole conversation: `mapping` tree, `current_node`. `read`'s message source |
 | `/backend-api/conversations/{id}/files?limit=200` | yes | the Files-in-chat panel's file listing |
 
 Note: the `message_id` in the `interpreter/download` URL is **not** the same
 value as the DOM's `data-turn-id` on the assistant's `<section>` — confirmed
-live, they differ. Don't try to derive it from the DOM; it must be captured
-off the network request, same as the `file_<id>` path.
+live, they differ. Don't try to derive it from the DOM. It is the `id` of the
+message in the conversation JSON whose text carries the `sandbox:` link.
 
 ## Test doubles for TDD against this tool
 
@@ -115,4 +117,3 @@ fixture — see `tests/read_files_panel.test.js` for the pattern before touching
 
 - `docs/INLINE_DOCUMENTS_AND_IMAGES.md` — the maintainer contract for report/file
   resolution specifically: DOM mapping, normalizer shapes, known-brittle bits.
-- `PLAN.md` — the raw investigation log this file was distilled from.
