@@ -20,8 +20,8 @@ export function fakeFilesPanelExtras(evaluateResult, { menuButtonPresent = true,
 
   const evaluate = async (script) => {
     if (script.includes('MESSAGE_ATTR')) return evaluateResult;
-    if (script.includes('conversation-options-button')) return menuButtonPresent;
-    if (script.includes('role="menu"') && script.includes('View files in chat')) return panelMenuItemPresent;
+    // One script opens the "More" menu and picks the panel item.
+    if (script.includes('conversation-options-button')) return menuButtonPresent && panelMenuItemPresent;
     if (script.includes('.length') && script.includes('li button')) return fileButtonCount;
     if (script.includes('Close fullscreen view')) return true;
 
@@ -58,6 +58,26 @@ export function fakeFilesPanelExtras(evaluateResult, { menuButtonPresent = true,
   };
 
   return { evaluate, wait: async () => {}, startNetworkCapture: async () => true, readNetworkCapture };
+}
+
+// Serves the backend-conversation path of `read`: the in-page conversation
+// fetch, the files-download hop that turns an image asset pointer into a signed
+// URL, and the image bytes. `requests` collects every file id hop 1 was asked for.
+export function fakeConversationExtras(conversation, { status = 200, dataUrl = '', requests = [] } = {}) {
+  const evaluate = async (script) => {
+    if (script.includes('/backend-api/conversation/')) {
+      return { url: 'https://chatgpt.com/c/abc', status, authHeader: 'Bearer token', body: JSON.stringify(conversation) };
+    }
+    const download = script.match(/\/backend-api\/files\/download\/(file[-_][A-Za-z0-9]+)/);
+    if (download) {
+      requests.push(download[1]);
+      return JSON.stringify({ download_url: `https://chatgpt.com/backend-api/estuary/content?id=${download[1]}` });
+    }
+    if (script.includes('readAsDataURL')) return dataUrl;
+    return null;
+  };
+
+  return { evaluate };
 }
 
 function capture(stream) {

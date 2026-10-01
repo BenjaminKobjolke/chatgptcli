@@ -16,7 +16,8 @@ export const ATTACHMENT_KIND = Object.freeze({
   FILE: 'file'
 });
 
-const DATA_URL_PATTERN = /^data:([^;,]*)[^,]*,(.*)$/s;
+export const FILE_DOWNLOAD_URL_PART = '/backend-api/files/download/';
+const DATA_URL_PATTERN =/^data:([^;,]*)[^,]*,(.*)$/s;
 const MIME_EXTENSIONS = Object.freeze({
   'image/png': '.png',
   'image/jpeg': '.jpg',
@@ -114,6 +115,45 @@ export function imageDataUrlScript(url, authHeader = '') {
   `;
 }
 
+export function safeJsonParse(text) {
+  try {
+    return JSON.parse(text);
+  } catch {
+    return null;
+  }
+}
+
+// A generic (non-report) Files-in-chat entry — a plain code-interpreter/canvas
+// output such as a generated .md file — has no `file_<id>` reference in its
+// own DOM; its filename can survive as the `fn=` query param on the signed
+// content URL (confirmed live against a real generated file).
+function extractContentFilename(contentUrl) {
+  try {
+    return new URL(contentUrl).searchParams.get('fn') || '';
+  } catch {
+    return '';
+  }
+}
+
+// Hop 1 of every attachment download: the files endpoint answers with a signed
+// `download_url` (`url` is '' when it does not), not the content. The signed
+// URL's `fn=` param is no longer always present — confirmed live for a
+// generated script — so the name falls back to the endpoint's own `file_name`,
+// a sandbox path (`/mnt/data/backup.ps1`) reduced to its last segment.
+export async function fetchSignedContent(page, downloadUrl, authHeader) {
+  const meta = safeJsonParse(
+    await page.evaluate(`
+      fetch(${JSON.stringify(downloadUrl)}, {
+        credentials: 'include',
+        headers: { authorization: ${JSON.stringify(authHeader)} }
+      }).then((r) => r.text()).catch(() => '')
+    `)
+  );
+  const url = meta && typeof meta.download_url === 'string' ? meta.download_url : '';
+  const fileName = meta && typeof meta.file_name === 'string' ? meta.file_name.split(/[\\/]/).pop() : '';
+  return { url, name: extractContentFilename(url) || fileName };
+}
+
 function decodeDataUrl(value) {
   const match = typeof value === 'string' ? value.match(DATA_URL_PATTERN) : null;
   if (!match) return null;
@@ -194,7 +234,7 @@ async function attachmentBytes(page, attachment) {
   return { buffer: Buffer.from(attachment.text, 'utf8'), extension };
 }
 
-function collectTargets(messages, fileId) {
+export function collectTargets(messages, fileId) {
   const all = messages.flatMap((message) =>
     (Array.isArray(message.attachments) ? message.attachments : []).map((attachment) => ({ message, attachment }))
   );

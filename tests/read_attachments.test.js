@@ -5,7 +5,14 @@ import { join, resolve } from 'node:path';
 import { runCli } from '../src/cli.js';
 import { __resetReadDepsForTest, __setReadDepsForTest } from '../src/commands/read.js';
 import { __resetAttachmentDepsForTest, __setAttachmentDepsForTest, toPosixPath } from '../src/commands/read_attachments.js';
-import { bindOriginalStdio, captureStderr, captureStdout, fakeReadPage, restoreStdio } from './test_helpers.js';
+import {
+  bindOriginalStdio,
+  captureStderr,
+  captureStdout,
+  fakeFilesPanelExtras,
+  fakeReadPage,
+  restoreStdio
+} from './test_helpers.js';
 
 const PNG_BASE64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
 const PNG_DATA_URL = `data:image/png;base64,${PNG_BASE64}`;
@@ -178,6 +185,41 @@ describe('read --files-output', () => {
     const output = JSON.parse(stdout.join(''));
     expect(output.count).toBe(1);
     expect(output.messages[0].attachments[0].id).toBe('image-01');
+  });
+});
+
+describe('read attachment naming', () => {
+  // Confirmed live: a generated script's signed URL carries no `fn=` param, so
+  // the entry came back nameless and was written to disk as `file-01.txt`.
+  test('a generated file is named from the download endpoint when the signed URL has no fn param', async () => {
+    const evaluateResult = {
+      url: 'https://chatgpt.com/c/abc',
+      messages: [{ role: 'user', text: 'write a backup script', title: '' }]
+    };
+    const contentUrl = 'https://chatgpt.com/backend-api/estuary/content?id=file_gen&sig=xyz';
+    __setReadDepsForTest({
+      openChat: async () => fakeReadPage(
+        evaluateResult,
+        fakeFilesPanelExtras(evaluateResult, {
+          fileButtonCount: 1,
+          fileEntries: [
+            {
+              downloadUrl: 'https://chatgpt.com/backend-api/files/download/file_gen',
+              contentUrl,
+              authHeader: 'Bearer test-token',
+              metaJson: { download_url: contentUrl, file_name: '/mnt/data/backup-prosody.ps1' },
+              contentText: '$ErrorActionPreference = "Stop"\n'
+            }
+          ]
+        })
+      )
+    });
+
+    const stdout = captureStdout();
+    const code = await runCli(['read', 'abc', '-f', 'json']);
+
+    expect(code).toBe(0);
+    expect(JSON.parse(stdout.join('')).messages[1].title).toBe('backup-prosody.ps1');
   });
 });
 

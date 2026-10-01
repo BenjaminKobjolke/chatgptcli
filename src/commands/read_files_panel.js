@@ -12,27 +12,25 @@
 // off the capture.
 import {
   ATTACHMENT_KIND,
+  FILE_DOWNLOAD_URL_PART,
   attachmentId,
+  fetchSignedContent,
   hasImageForAsset,
   markerFor,
+  safeJsonParse,
   textAttachmentEntry
 } from './read_attachments.js';
 
-const CONVERSATION_OPTIONS_BUTTON_SELECTOR = '[data-testid="conversation-options-button"]';
+// The testid is the older markup; the redesigned header only labels the button.
+const CONVERSATION_OPTIONS_BUTTON_SELECTOR =
+  '[data-testid="conversation-options-button"], header button[aria-label="More"]';
 const FILES_IN_CHAT_MENU_ITEM_TEXT = 'View files in chat';
-const FILES_IN_CHAT_PANEL_SELECTOR = 'section[aria-label="Files in chat"]';
+// Tag-agnostic on purpose: the panel was a <section>, the redesign labels a
+// tabpanel and the <ul> inside it. Either way each entry is one `li button`.
+const FILES_IN_CHAT_PANEL_SELECTOR = '[aria-label="Files in chat"]';
 const FILE_ENTRY_BUTTON_SELECTOR = `${FILES_IN_CHAT_PANEL_SELECTOR} li button`;
-const CLOSE_VIEWER_SELECTOR = 'button[aria-label="Close fullscreen view"]';
-const FILE_DOWNLOAD_URL_PART = '/backend-api/files/download/';
+const CLOSE_VIEWER_SELECTOR = 'button[aria-label="Close fullscreen view"], button[aria-label="Close viewer"]';
 const FILES_PANEL_POLL_ATTEMPTS = 10;
-
-function safeJsonParse(text) {
-  try {
-    return JSON.parse(text);
-  } catch {
-    return null;
-  }
-}
 
 // Repeatedly awaits `probe()` (a zero-arg async check) until it returns a
 // truthy value or the attempt budget runs out; returns that value, or `null`
@@ -69,41 +67,40 @@ function normalizeReportFileJson(value) {
 // resolve before the header has finished mounting, so a single
 // document.querySelector for "More" can miss it on a heavier page load —
 // same class of race for the dropdown menu's items rendering after the click.
+//
+// Opening the menu and picking the item are one poll for the same reason: the
+// button can exist before its handler is attached, so the opener is re-fired
+// for as long as no menu shows instead of being trusted once.
 async function openFilesInChatPanel(page) {
-  const menuOpened = await pollForValue(page, () =>
-    page.evaluate(`(() => {
-      const btn = document.querySelector(${JSON.stringify(CONVERSATION_OPTIONS_BUTTON_SELECTOR)});
-      if (!btn) return false;
-      btn.click();
-      return true;
-    })()`)
-  );
-  if (!menuOpened) return 0;
-
   const panelOpened = await pollForValue(page, () =>
     page.evaluate(`(() => {
       const items = Array.from(document.querySelectorAll('[role="menu"] [role="menuitem"], [role="menu"] button'));
       const hit = items.find((el) => (el.textContent || '').trim() === ${JSON.stringify(FILES_IN_CHAT_MENU_ITEM_TEXT)});
-      if (!hit) return false;
-      hit.click();
-      return true;
+      if (hit) {
+        hit.click();
+        return true;
+      }
+      const btn = document.querySelector(${JSON.stringify(CONVERSATION_OPTIONS_BUTTON_SELECTOR)});
+      if (!btn || document.querySelector('[role="menu"]')) return false;
+      // Confirmed live: the redesigned button is a Radix menu trigger, which
+      // opens on pointerdown and ignores a synthetic click entirely.
+      if (btn.hasAttribute('data-testid')) btn.click();
+      else btn.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, cancelable: true, button: 0, pointerType: 'mouse' }));
+      return false;
     })()`)
   );
   if (!panelOpened) return 0;
 
-  const count = await pollForValue(page, () =>
-    page.evaluate(`document.querySelectorAll(${JSON.stringify(FILE_ENTRY_BUTTON_SELECTOR)}).length`)
-  );
+  // The list streams in — confirmed live: 2 entries on the first look, 7 a
+  // moment later — so a count is only trusted once it repeats.
+  let previousCount = -1;
+  const count = await pollForValue(page, async () => {
+    const current = await page.evaluate(`document.querySelectorAll(${JSON.stringify(FILE_ENTRY_BUTTON_SELECTOR)}).length`);
+    const settled = current > 0 && current === previousCount;
+    previousCount = current;
+    return settled ? current : 0;
+  });
   return count || 0;
-}
-
-async function fetchTextInPage(page, url, authHeader) {
-  return page.evaluate(`
-    fetch(${JSON.stringify(url)}, {
-      credentials: 'include',
-      headers: { authorization: ${JSON.stringify(authHeader)} }
-    }).then((r) => r.text()).catch(() => '')
-  `);
 }
 
 // Classifies a panel attachment by the blob's own MIME type rather than its
@@ -134,22 +131,6 @@ async function fetchBodyInPage(page, url, authHeader, wantBytes) {
   `);
 }
 
-async function fetchJsonInPage(page, url, authHeader) {
-  return safeJsonParse(await fetchTextInPage(page, url, authHeader));
-}
-
-// A generic (non-report) Files-in-chat entry — a plain code-interpreter/canvas
-// output such as a generated .md file — has no `file_<id>` reference in its
-// own DOM; the only place its filename survives is the `fn=` query param on
-// the signed content URL (confirmed live against a real generated file).
-function extractContentFilename(contentUrl) {
-  try {
-    return new URL(contentUrl).searchParams.get('fn') || '';
-  } catch {
-    return '';
-  }
-}
-
 // Boundary normalizer for a fetched attachment's raw hop-2 body. Confirmed
 // live: a Deep Research report's content is JSON shaped like
 // `normalizeReportFileJson` expects, but a plain generated file (e.g. a
@@ -157,34 +138,33 @@ function extractContentFilename(contentUrl) {
 // `text/markdown` — not JSON at all. JSON that parses but isn't report-shaped
 // stays dropped (existing, intentional behavior for non-report uploads); only
 // genuinely non-JSON text is promoted to a generic `file` entry.
-function normalizeAttachedFileContent(rawText, contentUrl) {
+function normalizeAttachedFileContent(rawText, name) {
   const parsed = safeJsonParse(rawText);
   if (parsed !== null) {
     const report = normalizeReportFileJson(parsed);
     return report ? { role: 'report', text: report.text, title: report.title } : null;
   }
   const text = typeof rawText === 'string' ? rawText.trim() : '';
-  return text ? { role: 'file', text, title: extractContentFilename(contentUrl) } : null;
+  return text ? { role: 'file', text, title: name } : null;
 }
 
 async function fetchAttachedFileEntry(page, downloadUrl, authHeader, wantBytes) {
-  const meta = await fetchJsonInPage(page, downloadUrl, authHeader);
-  const contentUrl = meta && typeof meta.download_url === 'string' ? meta.download_url : '';
-  if (!contentUrl) return null;
+  const content = await fetchSignedContent(page, downloadUrl, authHeader);
+  if (!content.url) return null;
 
-  const body = await fetchBodyInPage(page, contentUrl, authHeader, wantBytes);
+  const body = await fetchBodyInPage(page, content.url, authHeader, wantBytes);
   if (body?.type === 'image') {
     return {
       role: ATTACHMENT_KIND.IMAGE,
-      title: extractContentFilename(contentUrl),
+      title: content.name,
       mime: body.mime || '',
       dataUrl: body.dataUrl || '',
-      src: contentUrl,
+      src: content.url,
       authHeader
     };
   }
 
-  return normalizeAttachedFileContent(body?.text ?? '', contentUrl);
+  return normalizeAttachedFileContent(body?.text ?? '', content.name);
 }
 
 // Clicks file entry `index`, captures the network request it fires to

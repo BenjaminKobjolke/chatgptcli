@@ -6,7 +6,9 @@ Dump the full transcript (all user and assistant messages) of a chat. Sends noth
 chatgptcli read [chat-url-or-id] [--files-output <dir>] [--file-id <id>] [--files-inline] [-f json|text]
 ```
 
-Without an argument, reads the chat currently open in the browser tab. With a URL or bare chat id, navigates there first (like [`switch`](switch.md)) and then reads. Either way the chat is hard-reloaded before scraping — a stale tab hides the "Files in chat" panel, and with it every attachment.
+Without an argument, reads the chat currently open in the browser tab. With a URL or bare chat id, navigates there first (like [`switch`](switch.md)) and then reads. Either way the chat is hard-reloaded first — a stale tab hides the "Files in chat" panel, and with it every generated file and report.
+
+Messages come from the chat's backend conversation JSON, fetched inside the logged-in tab — not from the rendered page. ChatGPT only keeps the few turns near the viewport mounted, so the page cannot supply a complete transcript; the JSON always can. Message text is therefore ChatGPT's own markdown source (code fences, `**bold**`, tables), not the rendered text.
 
 ## Options
 
@@ -73,15 +75,17 @@ JSON:
 }
 ```
 
-`attachments` is present only on messages that have one; `file` only after a successful download.
+`attachments` is present only on messages that have one; `file` only after a successful download. An image's `src` is ChatGPT's asset pointer (`sediment://file_…`) until `--files-output` resolves it to a signed URL.
 
 Text: `[role]` header followed by the message body, blank line between messages.
 
 ## Notes
 
-- Reads the DOM of the open tab; in very long chats the page may only keep visible messages rendered, so the transcript can be truncated to what is loaded.
-- Images come from two places. An `<img>` rendered inside a message gets its marker at the real position in that message's text. Everything else — uploaded screenshots, generated images — is found through the "Files in chat" panel and appended as its own `image` entry after the messages, because ChatGPT frequently renders those outside the message node, or not at all until the page has fully hydrated. The panel is the reliable source; a panel image that duplicates one already found in a message is dropped rather than given a second id.
-- An `<img>` counts as content only if it has actually loaded at 64x64 or larger; smaller or unloaded ones are UI chrome (citation favicons, tool glyphs) and get no marker.
+- The transcript is the branch of the chat currently shown: answers abandoned by regenerating or editing are not included. Reasoning, tool calls and web-search chatter are left out, and citation markers are stripped.
+- A chat that yields no messages at all is an error (`API_ERROR`, exit 5), not an empty success — it means the tab is not logged in, is not on a chat, or ChatGPT changed underneath the tool.
+- Uploaded and generated images get their marker at the real position in the message that carries them. Generated files and Deep Research reports are found through the "Files in chat" panel and appended as their own entries after the messages; a panel image that duplicates one already in a message is dropped rather than given a second id.
+- The panel is walked one file at a time, a few seconds each, so a chat with many attachments reads noticeably slower than one without.
+- If the conversation JSON cannot be fetched, `read` falls back to scraping the rendered page. That fallback only sees the turns currently mounted, so a long chat comes back truncated to its tail.
 - Ids are assigned per read. Take the id from the same run's output before passing it to `--file-id`.
 - A download that fails — an expired signed URL, a blocked host — leaves the bare marker in place and the read still succeeds; the skipped attachment is named on stderr.
 - With `--files-output`, the JSON output carries `filesOutputDir`: the directory the files actually landed in, resolved to an absolute path (marker links keep the path you passed).

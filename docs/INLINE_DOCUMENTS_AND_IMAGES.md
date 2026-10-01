@@ -1,8 +1,10 @@
 # Inline documents and images (Deep Research reports, generated files, images)
 
-`chatgptcli read` scrapes the DOM of a chatgpt.com tab. Normally every turn is a
-`[data-message-author-role]` node and its `innerText` is the whole message. Two
-kinds of attachment break that assumption and need special handling:
+`chatgptcli read` takes a chat's messages from its backend conversation JSON
+(see "Message source" below) and falls back to scraping the DOM of the
+chatgpt.com tab, where every turn used to be a `[data-message-author-role]` node
+whose `innerText` is the whole message. Two kinds of attachment are in neither
+place and need special handling:
 
 - A **ChatGPT Deep Research report** — the richly formatted, downloadable
   document with an **Export** button — renders **inside a cross-origin
@@ -20,6 +22,44 @@ This doc is the maintainer contract for that handling. Two independent
 mechanisms exist; only the first currently produces report bodies (see
 "Cross-origin iframe path" below for why the second is inert cover, kept
 per explicit decision rather than deleted).
+
+## Message source: backend conversation JSON
+
+ChatGPT's redesigned chat page (confirmed live 2026-10-01) removed
+`[data-testid^="conversation-turn"]` and `[data-message-author-role]` and, more
+importantly, **virtualizes the chat list**: only the ~5 turns near the viewport
+are mounted, older ones load on scroll while newer ones unmount. A chat with 46
+user turns exposed 5. No selector can read a complete transcript out of that
+DOM, so `read` stopped using it as its primary source.
+
+`readConversation` in `src/commands/read_conversation.js` runs one in-page
+script: `GET /api/auth/session` for the bearer token, then
+`GET /backend-api/conversation/<id>` (the id comes from the tab's own
+`location.pathname`). Everything that interprets the response runs in Node:
+
+- `mapping` is a tree. The visible chat is the path from `current_node` up
+  through `parent`; branches abandoned by regenerating or editing are skipped.
+- A message is kept when `author.role` is `user` or `assistant`, `recipient` is
+  `all`, `content.content_type` is `text` or `multimodal_text`, and
+  `metadata.is_visually_hidden_from_conversation` is not set. That drops
+  reasoning (`thoughts`, `reasoning_recap`), tool calls (`recipient: web.run`,
+  `python`) and tool output.
+- A `tool` message is kept only for its image parts — a generated image — and
+  is emitted as `assistant`, without the tool's own log text.
+- Citation tokens (U+E200 … U+E201) are stripped from text parts.
+- An `image_asset_pointer` part becomes an `[image-NN]` marker at its position,
+  with the pointer (`sediment://file_<id>`) as the attachment's `src` and the
+  upload's name from `metadata.attachments`. `resolveImagePointers` swaps the
+  pointer for a signed URL through `/backend-api/files/download/<id>` — only
+  under `--files-output`, since it costs one request per image.
+
+`readConversation` returns `null` when the fetch does not come back as a 200
+with a `mapping`; `runRead` then falls back to the DOM scrape, which is why the
+sections below still describe it. Generated files and Deep Research reports are
+not resolved from the JSON — they still come from the "Files in chat" panel.
+
+An empty transcript is an error (`API_ERROR`, exit 5). It used to be
+`ok: true, count: 0`, which is how the DOM change went unnoticed.
 
 ## Markers: inlining is opt-in
 
@@ -41,6 +81,9 @@ downloads the bytes, and without it the marker is all the caller gets. An
 `<img>` counts as content only once it has loaded at 64x64 or larger —
 requiring real pixels is what keeps unloaded chrome (citation favicons, tool
 glyphs) from producing markers that appear on some runs and not others.
+
+The next paragraph describes the **DOM fallback** only; from the conversation
+JSON an image is a part of its message and always gets a positioned marker.
 
 **An image is usually not in its message turn at all.** Confirmed live: a
 screenshot attached to a user message renders no `<img>` inside
@@ -104,10 +147,16 @@ repeated once per file
 must be reopened fresh for the next one — confirmed live; the "More" button
 itself stays functional throughout):
 
-1. Click `[data-testid="conversation-options-button"]` ("More"), then the menu
-   item whose text is exactly `View files in chat` (no stable selector exists
-   for it — matched by trimmed `textContent`, the most brittle part of this
-   path). Poll for `section[aria-label="Files in chat"] li button` entries.
+1. Open "More" — `header button[aria-label="More"]`, formerly
+   `[data-testid="conversation-options-button"]` — then pick the menu item whose
+   text is exactly `View files in chat` (no stable selector exists for it —
+   matched by trimmed `textContent`, the most brittle part of this path). The
+   redesigned button is a Radix menu trigger: it opens on `pointerdown` and
+   ignores a synthetic `click()`. Opening and picking are one poll, because the
+   button can be in the DOM before its handler is attached — the opener is
+   re-fired for as long as no `[role="menu"]` shows. Then poll for
+   `[aria-label="Files in chat"] li button` entries until the count repeats:
+   the list streams in (confirmed live: 2 entries, then 7).
 2. `startNetworkCapture('')`, click file entry `i`, poll `readNetworkCapture()`
    for a request whose `url` contains `/backend-api/files/download/` — this is
    the only way to learn the file's real `file_<id>` and the bearer token
@@ -133,11 +182,16 @@ itself stays functional throughout):
      code-interpreter/canvas-generated file (e.g. a `.md` ChatGPT creates and
      offers as a download): the hop-2 response is raw `text/markdown`, not
      JSON. Promoted to `{ role: 'file', text: rawText.trim(), title }`, where
-     `title` is read off the `fn=` query param on the signed content URL (the
-     only place the filename survives — it is not in the panel's DOM).
+     `title` is read off the `fn=` query param on the signed content URL, or —
+     when that param is absent, as confirmed live for a generated `.ps1` — off
+     the last segment of the download endpoint's own `file_name`
+     (`/mnt/data/backup-prosody.ps1`).
    Either entry shape is appended to the message list (not interleaved by
    conversation position — see "Known-brittle bits").
-5. `button[aria-label="Close fullscreen view"]` is clicked before moving to the
+   A file the panel lists twice fires no second download request (the page
+   has it cached), so the repeat entry times out after the poll budget and is
+   dropped — about 10 s spent per repeat.
+5. `button[aria-label="Close viewer"]` (formerly `"Close fullscreen view"`) is clicked before moving to the
    next file (or returning). This drives the **user's real, already-open**
    Chrome tab — leaving it stuck in the fullscreen artifact viewer after a
    `read` call is a visible side effect the user did not ask for.
@@ -259,7 +313,9 @@ the corrected write-up: `PLAN.md` session 4.
   above) and appends them to the end of the message list in files-panel order.
   In a chat with multiple reports interspersed with other turns, output order
   will not exactly match conversation order.
-- **Backend-api coupling.** The `/backend-api/files/download/` and
+- **Backend-api coupling.** The `/api/auth/session` and
+  `/backend-api/conversation/<id>` endpoints and the `mapping` / `current_node`
+  shape behind the message source, the `/backend-api/files/download/` and
   `/backend-api/estuary/content` endpoints, the `download_url` redirect shape,
   and the `widget_state.report_message.content.parts[0]` report shape are all
   OpenAI-private, undocumented, and can change without notice — this whole
