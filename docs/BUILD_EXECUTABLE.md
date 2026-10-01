@@ -23,6 +23,14 @@ chatgptcli.exe read
 chatgptcli.exe ask "hello" -f text
 ```
 
+### Install the local build for the Claude plugin
+
+```bash
+tools\install_local.bat
+```
+
+Builds, then copies the exe to `%USERPROFILE%\.chatgptcli\bin\chatgptcli.exe` — the path the Claude plugin skill uses outside this repo. Use it to test an unreleased build from other projects. It kills running `chatgptcli.exe` daemons first (they lock the file). The skill text itself is not touched; that only updates through a release plus `claude plugin update` (see [CREATE_NEW_RELEASE.md](CREATE_NEW_RELEASE.md)).
+
 ## Runtime requirements
 
 - Google Chrome / Chromium with the OpenCLI extension installed and enabled
@@ -39,9 +47,9 @@ That's it — the bridge daemon starts automatically from inside the exe.
 | `switch` | ✅ | In-process bundled BrowserBridge |
 | `setup` | ✅ | |
 | `set-chrome` | ✅ | Writes `~/.chatgptcli/settings.json` |
-| `launch` | ✅ | Starts the configured Chrome; skips `--load-extension` when the opencli extension dir isn't on disk (install the extension in Chrome manually) |
+| `launch` | ✅ | Starts the configured Chrome; no `--load-extension` (the exe carries no extension dir — install the extension in Chrome manually); prints the next step (log in, then `setup`) |
 | `switch-session` | ✅ | Lists connected bridge profiles, stores the pick in `~/.chatgptcli/settings.json` |
-| `doctor` | ❌ | Spawns the opencli CLI; exits 6 with a hint. Run `bun run src/main.js doctor` from the repo instead. |
+| `doctor` | ❌ | Spawns the opencli CLI; hidden from `--help`, exits 6 pointing at `setup`. Run `bun run src/main.js doctor` from the repo instead. |
 
 ## How the compiled build works
 

@@ -34,7 +34,7 @@ bun run build
 tools\build.bat
 ```
 
-Produces a single self-contained `chatgptcli.exe` in the repo root — the opencli Browser Bridge is bundled into the exe, so `ask`/`read`/`switch` need no Bun and no opencli checkout at runtime. Copy the exe anywhere or add the repo directory to your PATH. The [Chrome extension](https://chromewebstore.google.com/detail/opencli/ildkmabpimmkaediidaifkhjpohdnifk) must still be installed. `doctor` is unavailable in the exe; run it from the repo with `bun run src/main.js doctor`. Details: [docs/BUILD_EXECUTABLE.md](docs/BUILD_EXECUTABLE.md).
+Produces a single self-contained `chatgptcli.exe` in the repo root — the opencli Browser Bridge is bundled into the exe, so `ask`/`read`/`switch` need no Bun and no opencli checkout at runtime. Copy the exe anywhere or add the repo directory to your PATH. The [Chrome extension](https://chromewebstore.google.com/detail/opencli/ildkmabpimmkaediidaifkhjpohdnifk) must still be installed. `doctor` is unavailable in the exe; run it from the repo with `bun run src/main.js doctor`. To put a local build where the Claude plugin picks it up, run `tools\install_local.bat`. Details: [docs/BUILD_EXECUTABLE.md](docs/BUILD_EXECUTABLE.md).
 
 ## Claude Code Plugin
 
@@ -98,7 +98,7 @@ This validates:
 
 - `chatgptcli ask` uses the ChatGPT web app, not the OpenAI API.
 - `chatgptcli ask` talks directly to `opencli`'s `BrowserBridge`; it does not rely on the desktop-only `opencli chatgpt` adapter.
-- `chatgptcli doctor` forwards to `opencli doctor`.
+- `chatgptcli doctor` forwards to `opencli doctor` (source checkout only; the compiled exe uses `setup`).
 - `chatgptcli setup` is a preflight checker: local prerequisites plus whether a browser profile is connected to the Browser Bridge. It changes nothing.
 - By default, `chatgptcli` looks for `opencli` in `.omx/reference/opencli`.
 - If your `opencli` lives somewhere else, set `CHATGPTCLI_OPENCLI_ROOT=/path/to/opencli`.
