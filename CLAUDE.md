@@ -19,6 +19,11 @@ Do not inline rules back into this file and do not use `@import` for
 
 # chatgptcli
 
+## Graphify
+
+Scan root is `src` only, built with `/graphify src --directed` into the root
+`graphify-out/` (gitignored). Rebuild at that same scope; never the repo root.
+
 ## Code Analysis
 
 Two analysis modes — pick by situation:

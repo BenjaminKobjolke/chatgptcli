@@ -44,6 +44,16 @@ production code does: `page.startNetworkCapture('')` + click +
 `page.readNetworkCapture()`, reading `entry.requestHeaders.authorization` off
 the real request the app fires. Never hand-fetch the bearer token another way.
 
+### Source runs from an AI agent's shell print one extra stdout line
+
+When `bun` on PATH is the [proto](https://moonrepo.dev/proto) shim and the shell
+sets `AI_AGENT` (Claude Code does), proto itself writes
+`{"type":"message","message":"Detected an AI agent environment, printing as NDJSON…"}`
+to stdout around the command's own output, on most runs. It is not chatgptcli and
+not opencli: the string lives in `proto.exe`, the compiled `chatgptcli.exe` never
+prints it. When a probe needs to `JSON.parse` stdout, run the exe or call the
+real binary (`~/.proto/bin/bun.exe run src/main.js …`) instead of the shim.
+
 ## Reverse-engineering an undocumented backend-api endpoint
 
 Recipe used to find the generated-file content shape (full writeup:
