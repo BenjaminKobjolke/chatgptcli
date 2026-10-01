@@ -20,6 +20,7 @@ import {
   safeJsonParse
 } from './read_attachments.js';
 import { attachmentEntry, fetchAttachedFileEntry, normalizeReportFileJson } from './read_file_content.js';
+import { conversationFetchFailure } from './read_failure.js';
 
 const SESSION_URL = '/api/auth/session';
 const CONVERSATION_URL = '/backend-api/conversation/';
@@ -42,11 +43,14 @@ const FIRST_HEADING_PATTERN = /^#\s+(.+)$/m;
 // own location so a bare `read` (no URL argument) works the same way.
 function conversationFetchScript() {
   return `(async () => {
-    const result = { url: location.href, status: 0, authHeader: '', body: '' };
+    const chatId = location.pathname.split(${JSON.stringify(CHAT_PATH_MARKER)}).pop().split('/')[0];
+    const result = { url: location.href, status: 0, loggedOut: false, offChat: !chatId, authHeader: '', body: '' };
     try {
       const session = await fetch(${JSON.stringify(SESSION_URL)}, { credentials: 'include' }).then((response) => response.json());
-      const chatId = location.pathname.split(${JSON.stringify(CHAT_PATH_MARKER)}).pop().split('/')[0];
-      if (!session || !session.accessToken || !chatId) return result;
+      // Set only once the session answered: a fetch that throws (a challenge
+      // page, no network) must not read as "logged out".
+      result.loggedOut = !session || !session.accessToken;
+      if (result.loggedOut || result.offChat) return result;
       result.authHeader = 'Bearer ' + session.accessToken;
       const response = await fetch(${JSON.stringify(CONVERSATION_URL)} + chatId, {
         credentials: 'include',
@@ -188,19 +192,21 @@ function conversationMessages(conversation) {
   return { messages, imageCount };
 }
 
-// Returns the same `{ url, messages, imageCount }` shape as the DOM scrape so
-// read.js consumes either source through one code path, plus the bearer header
-// later fetches need. `imagesPositioned` tells the panel resolver that every
-// image of the chat already has its marker.
+// `result` has the same `{ url, messages, imageCount }` shape as the DOM scrape
+// so read.js consumes either source through one code path, plus the bearer
+// header later fetches need. `imagesPositioned` tells the panel resolver that
+// every image of the chat already has its marker. `result` is `null` when the
+// fetch was unusable; `failure` then says why, if the fetch could tell.
 export async function readConversation(page) {
-  const fetched = normalizeConversationFetch(await page.evaluate(conversationFetchScript()));
-  if (!fetched) return null;
-  return {
+  const raw = await page.evaluate(conversationFetchScript());
+  const fetched = normalizeConversationFetch(raw);
+  const result = fetched && {
     url: fetched.url,
     authHeader: fetched.authHeader,
     imagesPositioned: true,
     ...conversationMessages(fetched.conversation)
   };
+  return { result, failure: conversationFetchFailure(raw) };
 }
 
 // Turns the placeholders `conversationMessages` left behind into report and

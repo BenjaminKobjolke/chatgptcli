@@ -82,7 +82,14 @@ Text: `[role]` header followed by the message body, blank line between messages.
 ## Notes
 
 - The transcript is the branch of the chat currently shown: answers abandoned by regenerating or editing are not included. Reasoning, tool calls and web-search chatter are left out, and citation markers are stripped.
-- A chat that yields no messages at all is an error (`API_ERROR`, exit 5), not an empty success — it means the tab is not logged in, is not on a chat, or ChatGPT changed underneath the tool.
+- A chat that yields no messages at all is an error, not an empty success. The message on stderr names the cause where the conversation fetch could tell:
+
+  | Error | Exit | Meaning |
+  |---|---|---|
+  | `AUTH_MISSING: Not logged into chatgpt.com in the bridge browser` | 3 | The session answered without an access token — log in in the bridge browser window |
+  | `API_ERROR: The bridge browser tab is not on a chat` | 5 | The tab's URL is no chat. ChatGPT redirects away from a chat it cannot open, so with a URL argument this means a different account owns the chat, or it was deleted |
+  | `API_ERROR: Chat not found for the account logged into the bridge browser` | 5 | The backend answered 404 — a different account owns the chat, or it was deleted |
+  | `API_ERROR: No messages found in this chat` | 5 | Cause unknown — the tab is not on a chat, shows a CAPTCHA, or ChatGPT changed underneath the tool |
 - Uploaded and generated images get their marker at the real position in the message that carries them. A Deep Research report is its own `report` entry where it appeared in the chat, and a generated file is a `file` entry right after the reply that links it. All three come from the conversation JSON.
 - The "Files in chat" panel is still checked afterwards for anything the JSON did not explain (a canvas, an uploaded text file); what it finds is appended after the messages. It opens only entries not already in the transcript — each costs a few seconds — so a typical read takes about 15 seconds whatever the number of attachments.
 - If the conversation JSON cannot be fetched, `read` falls back to scraping the rendered page. That fallback only sees the turns currently mounted, so a long chat comes back truncated to its tail.

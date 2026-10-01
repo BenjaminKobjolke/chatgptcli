@@ -74,8 +74,13 @@ export function fakeFilesPanelExtras(
 // Serves the backend-conversation path of `read`: the in-page conversation
 // fetch, the files-download hop that turns an image asset pointer into a signed
 // URL, and the image bytes. `requests` collects every file id hop 1 was asked
-// for; `sandboxFiles` maps a generated file's sandbox path to its content.
-export function fakeConversationExtras(conversation, { status = 200, dataUrl = '', requests = [], sandboxFiles = {} } = {}) {
+// for; `sandboxFiles` maps a generated file's sandbox path to its content;
+// `loggedOut` is a session that answered without an access token, `offChat` a
+// tab whose location is not a chat URL.
+export function fakeConversationExtras(
+  conversation,
+  { status = 200, loggedOut = false, offChat = false, dataUrl = '', requests = [], sandboxFiles = {} } = {}
+) {
   const evaluate = async (script) => {
     if (script.includes('/interpreter/download')) {
       const path = Object.keys(sandboxFiles).find((entry) => script.includes(encodeURIComponent(entry)));
@@ -86,6 +91,9 @@ export function fakeConversationExtras(conversation, { status = 200, dataUrl = '
       return path ? { type: 'text', text: sandboxFiles[path] } : null;
     }
     if (script.includes('/backend-api/conversation/')) {
+      if (loggedOut || offChat) {
+        return { url: 'https://chatgpt.com/', status: 0, loggedOut, offChat, authHeader: '', body: '' };
+      }
       return { url: 'https://chatgpt.com/c/abc', status, authHeader: 'Bearer token', body: JSON.stringify(conversation) };
     }
     const download = script.match(/\/backend-api\/files\/download\/(file[-_][A-Za-z0-9]+)/);

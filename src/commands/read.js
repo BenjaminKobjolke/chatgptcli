@@ -5,6 +5,7 @@ import { AppError, ERROR_CODE, EXIT_CODE } from '../core/errors.js';
 import { connectBridge, loadBrowserBridge } from '../core/opencli.js';
 import { resolveBridgeProfile } from '../core/settings.js';
 import { readConversation, resolveImagePointers, resolvePendingAttachments } from './read_conversation.js';
+import { EMPTY_TRANSCRIPT_ERROR } from './read_failure.js';
 import { readScrapeScript, reportFrameScript } from './read_scrape.js';
 import { resolveReportFiles } from './read_files_panel.js';
 import {
@@ -19,10 +20,6 @@ import {
 // node, so counting role nodes underreports how much of the chat has mounted.
 // `[data-turn-key]` is the redesigned markup's turn; the first two are older.
 const TURN_SELECTOR = '[data-turn-key], [data-testid^="conversation-turn"], [data-message-author-role]';
-const NO_MESSAGES_MESSAGE = 'No messages found in this chat';
-const NO_MESSAGES_HINT =
-  'Check that the bridge browser is logged into chatgpt.com (`chatgptcli launch`) and shows the chat. ' +
-  'If it does, ChatGPT changed its page or API — update chatgptcli.';
 
 // Location test for a bare `read` (no URL argument). Deliberately NOT
 // `normalizeChatUrl`: that one normalizes *user input*, so it coerces any
@@ -209,7 +206,8 @@ export async function runRead(input) {
   return withOpenChat(input, async (page) => {
     // The backend JSON is complete; the DOM only holds the turns currently
     // mounted, so it is the fallback for when that endpoint stops answering.
-    const result = (await readConversation(page)) ?? (await page.evaluate(readScrapeScript(0)));
+    const conversation = await readConversation(page);
+    const result = conversation.result ?? (await page.evaluate(readScrapeScript(0)));
     const rawMessages = Array.isArray(result?.messages) ? result.messages : [];
     // Ids run per kind across the whole chat, but each browser context numbers
     // its own images, so the running image count is handed to the next scrape.
@@ -245,10 +243,9 @@ export async function runRead(input) {
       .map(normalizeEntry)
       .filter((message) => message.text || message.attachments?.length);
 
-    // An empty transcript reported as success is how a ChatGPT markup change
-    // went unnoticed: `ok: true, count: 0` reads like an empty chat.
     if (!messages.length) {
-      throw new AppError(ERROR_CODE.API_ERROR, NO_MESSAGES_MESSAGE, { hint: NO_MESSAGES_HINT });
+      const { code, message, hint } = EMPTY_TRANSCRIPT_ERROR[conversation.failure];
+      throw new AppError(code, message, { hint });
     }
 
     if (input.format === 'text') {

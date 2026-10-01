@@ -91,8 +91,9 @@ under a label that is not its title, and is then dropped as a duplicate:
 | 35 images, 28 of them generated | 5 min 7 s | ~15 s |
 | one Deep Research report | ~13 s | 15-29 s (one click, same as before) |
 
-An empty transcript is an error (`API_ERROR`, exit 5). It used to be
-`ok: true, count: 0`, which is how the DOM change went unnoticed.
+An empty transcript is an error (`AUTH_MISSING`, exit 3, when the browser is
+logged out; otherwise `API_ERROR`, exit 5 — see [`read`](commands/read.md)).
+It used to be `ok: true, count: 0`, which is how the DOM change went unnoticed.
 
 ## Markers: inlining is opt-in
 
