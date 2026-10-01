@@ -4,3 +4,4 @@ if "%VERSION%"=="" exit /b 1
 for /f "delims=" %%b in ('call "%~dp0build_get.bat"') do set BUILD=%%b
 if "%BUILD%"=="" exit /b 1
 echo %VERSION%_%BUILD%
+exit /b 0

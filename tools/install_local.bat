@@ -20,3 +20,4 @@ if errorlevel 1 (
 
 "%DEST%\chatgptcli.exe" --version
 echo [OK] installed to %DEST%
+exit /b %errorlevel%

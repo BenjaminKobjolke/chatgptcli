@@ -8,3 +8,4 @@ if "%VERSION%"=="" (
     exit /b 1
 )
 echo %VERSION%
+exit /b 0

@@ -13,3 +13,4 @@ if "%BUILD%"=="" (
 set /a NEW=BUILD+%~1
 (echo %NEW%)>build_version.txt
 echo %NEW%
+exit /b 0

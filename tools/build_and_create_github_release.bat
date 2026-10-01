@@ -59,3 +59,4 @@ if errorlevel 1 (
 )
 
 echo [OK] Release v%VERSION% published
+exit /b 0

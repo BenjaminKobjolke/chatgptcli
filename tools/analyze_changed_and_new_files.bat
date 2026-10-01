@@ -9,4 +9,4 @@ cd /d "%~dp0.."
 
 "%CLI_ANALYZER_PATH%\venv\Scripts\python.exe" "%CLI_ANALYZER_PATH%\main.py" --language %LANGUAGE% --path "." --only-changed --verbosity minimal --output "code_analysis_results" --rules "code_analysis_rules.json"
 
-cd /d "%~dp0"
+cd /d "%~dp0" & exit /b %errorlevel%

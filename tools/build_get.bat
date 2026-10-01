@@ -7,3 +7,4 @@ if not exist build_version.txt (
 )
 set /p BUILD=<build_version.txt
 echo %BUILD%
+exit /b 0
