@@ -6,6 +6,7 @@ import { runSetup } from './commands/setup.js';
 import { runLaunch, runSetChrome, runSwitchSession } from './commands/chrome.js';
 import { parseAskArgs, parseDoctorArgs, parseReadArgs, parseSetChromeArgs, parseSetupArgs, parseSwitchArgs } from './cli_args.js';
 import { checkMinVersion } from './core/min_version.js';
+import { IS_COMPILED } from './core/opencli.js';
 import pkg from '../package.json';
 
 const VERSION = pkg.version;
@@ -96,7 +97,8 @@ function helpText() {
     '  chatgptcli ask <prompt> [--new] [--file <path>] [--timeout <seconds>] [--max-attempts <n>] [--retry-delay-ms <ms>] [-f json|text]',
     '  chatgptcli read [chat-url-or-id] [--files-output <dir>] [--file-id <id>] [--files-inline] [-f json|text]',
     '  chatgptcli switch <chat-url-or-id>',
-    '  chatgptcli doctor [--sessions] [--no-live]',
+    // doctor spawns the opencli CLI, which a compiled exe does not carry.
+    ...(IS_COMPILED ? [] : ['  chatgptcli doctor [--sessions] [--no-live]']),
     '  chatgptcli setup',
     '  chatgptcli set-chrome <path-to-chrome.exe> [--profile <dir>]',
     '  chatgptcli launch',

@@ -2,7 +2,7 @@ import { spawn } from 'node:child_process';
 import { existsSync, mkdirSync } from 'node:fs';
 import { createInterface } from 'node:readline/promises';
 import { AppError, ERROR_CODE, EXIT_CODE } from '../core/errors.js';
-import { loadBrowserBridge, resolveOpenCliPaths } from '../core/opencli.js';
+import { IS_COMPILED, loadBrowserBridge, resolveOpenCliPaths } from '../core/opencli.js';
 import {
   loadSettings,
   resolveBridgeProfile,
@@ -51,7 +51,9 @@ export function runLaunch() {
   const { extensionPath } = resolveOpenCliPaths();
   if (existsSync(extensionPath)) {
     args.push(`--load-extension=${extensionPath}`);
-  } else {
+  } else if (!IS_COMPILED) {
+    // A compiled exe never has the dir (the path resolves into its virtual
+    // filesystem), so there the note would say nothing about the profile.
     process.stdout.write(
       'Note: opencli extension dir not found on disk; install the OpenCLI extension in Chrome manually.\n'
     );
@@ -59,7 +61,10 @@ export function runLaunch() {
   args.push('https://chatgpt.com/');
 
   spawn(executable, args, { detached: true, stdio: 'ignore' }).unref();
-  process.stdout.write(`Launched ${executable} with profile ${profileDir}\n`);
+  process.stdout.write(
+    `Launched ${executable} with profile ${profileDir}\n` +
+      'Next: log into chatgpt.com in that window if asked, then run `chatgptcli setup` to check the Browser Bridge connection and extension.\n'
+  );
   return EXIT_CODE.SUCCESS;
 }
 

@@ -3,7 +3,9 @@ import { EXIT_CODE } from '../core/errors.js';
 
 export function runDoctor(options) {
   if (IS_COMPILED) {
-    process.stderr.write('doctor is unavailable in the compiled exe; run `bun run src/main.js doctor` from the repo.\n');
+    process.stderr.write(
+      'doctor needs an opencli checkout and is unavailable in the compiled exe; run `chatgptcli setup` for the bridge status.\n'
+    );
     return EXIT_CODE.CONFIG;
   }
 
