@@ -19,3 +19,5 @@ HANDOFF.md
 graphify-out/
 src/graphify-out/
 feedback
+tickets/
+tools/.tw-run-*
