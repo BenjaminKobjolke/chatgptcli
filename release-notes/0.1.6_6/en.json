@@ -1,0 +1,12 @@
+{
+  "version": "0.1.6",
+  "build": 6,
+  "date": "2026-10-01",
+  "title": "read says why a transcript is empty",
+  "notes": [
+    "read reports a logged-out bridge browser as AUTH_MISSING (exit 3) and a chat the logged-in account cannot open as 'The bridge browser tab is not on a chat' or 'Chat not found' (exit 5), instead of one generic 'No messages found' error.",
+    "The compiled exe no longer lists doctor in --help; its error points at setup.",
+    "launch in the compiled exe no longer prints a misleading 'extension dir not found' note and names the next step (log in, then setup).",
+    "The plugin skill tells the agent what to do for each empty-transcript error."
+  ]
+}
