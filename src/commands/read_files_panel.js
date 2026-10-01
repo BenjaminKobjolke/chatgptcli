@@ -10,16 +10,8 @@
 // Confirmed live: readNetworkCapture() only exposes request metadata, never
 // response bodies, so content is fetched explicitly in-page rather than read
 // off the capture.
-import {
-  ATTACHMENT_KIND,
-  FILE_DOWNLOAD_URL_PART,
-  attachmentId,
-  fetchSignedContent,
-  hasImageForAsset,
-  markerFor,
-  safeJsonParse,
-  textAttachmentEntry
-} from './read_attachments.js';
+import { ATTACHMENT_KIND, FILE_DOWNLOAD_URL_PART, hasImageForAsset, isImageFileName } from './read_attachments.js';
+import { attachmentEntry, fetchAttachedFileEntry } from './read_file_content.js';
 
 // The testid is the older markup; the redesigned header only labels the button.
 const CONVERSATION_OPTIONS_BUTTON_SELECTOR =
@@ -30,6 +22,7 @@ const FILES_IN_CHAT_MENU_ITEM_TEXT = 'View files in chat';
 const FILES_IN_CHAT_PANEL_SELECTOR = '[aria-label="Files in chat"]';
 const FILE_ENTRY_BUTTON_SELECTOR = `${FILES_IN_CHAT_PANEL_SELECTOR} li button`;
 const CLOSE_VIEWER_SELECTOR = 'button[aria-label="Close fullscreen view"], button[aria-label="Close viewer"]';
+const CLOSE_PANEL_SELECTOR = 'aside button[aria-label="Close panel"]';
 const FILES_PANEL_POLL_ATTEMPTS = 10;
 
 // Repeatedly awaits `probe()` (a zero-arg async check) until it returns a
@@ -45,22 +38,17 @@ async function pollForValue(page, probe) {
   return null;
 }
 
-// Boundary normalizer (CODING_RULES "Boundary Normalizers") for a fetched
-// report file's JSON. A file in the panel that isn't a Deep Research report
-// (a plain upload, or a malformed/failed fetch) has no `parts[0]` and
-// degrades to `null` here, so it never becomes a report entry.
-function normalizeReportFileJson(value) {
-  const object = value && typeof value === 'object' ? value : {};
-  const title = typeof object.title === 'string' ? object.title : '';
-  const parts = object.widget_state?.report_message?.content?.parts;
-  const text = Array.isArray(parts) && typeof parts[0] === 'string' ? parts[0] : '';
-  return text ? { title, text } : null;
+// Both the viewer and the panel sit in the user's own, visible tab, so each is
+// closed again; a close control that is not there is nothing to fail over.
+async function clickIfPresent(page, selector) {
+  await page.evaluate(`document.querySelector(${JSON.stringify(selector)})?.click()`).catch(() => {});
 }
 
-// Opens the "More" -> "View files in chat" panel and returns the number of
-// file entries found (0 if the chat has no Files-in-chat panel, or it never
-// populates). Also used to reopen the panel between files, since opening the
-// fullscreen artifact viewer for one file removes the panel from the DOM.
+// Opens the "More" -> "View files in chat" panel and returns one label per
+// file entry — its file name, or '' where the markup carries none ([] if the
+// chat has no Files-in-chat panel, or it never populates). Also used to reopen
+// the panel between files, since opening the fullscreen artifact viewer for
+// one file removes the panel from the DOM.
 //
 // Every step here polls rather than checking once: confirmed live that
 // `openChat`'s readiness wait (page.wait for the first message node) can
@@ -89,82 +77,25 @@ async function openFilesInChatPanel(page) {
       return false;
     })()`)
   );
-  if (!panelOpened) return 0;
+  if (!panelOpened) return [];
 
   // The list streams in — confirmed live: 2 entries on the first look, 7 a
   // moment later — so a count is only trusted once it repeats.
   let previousCount = -1;
-  const count = await pollForValue(page, async () => {
-    const current = await page.evaluate(`document.querySelectorAll(${JSON.stringify(FILE_ENTRY_BUTTON_SELECTOR)}).length`);
-    const settled = current > 0 && current === previousCount;
-    previousCount = current;
-    return settled ? current : 0;
+  const labels = await pollForValue(page, async () => {
+    const current = await page.evaluate(
+      `Array.from(document.querySelectorAll(${JSON.stringify(FILE_ENTRY_BUTTON_SELECTOR)}), (el) => el.getAttribute('aria-label') || '')`
+    );
+    const count = Array.isArray(current) ? current.length : 0;
+    const settled = count > 0 && count === previousCount;
+    previousCount = count;
+    return settled ? current.map(String) : null;
   });
-  return count || 0;
+  return labels || [];
 }
 
-// Classifies a panel attachment by the blob's own MIME type rather than its
-// filename: confirmed live that an uploaded screenshot's signed content URL
-// carries no `fn=` parameter at all, so there is no name to judge. `wantBytes`
-// decides whether the image travels back as a data URL (a download was asked
-// for) or only as its type — base64 over the bridge is not free.
-async function fetchBodyInPage(page, url, authHeader, wantBytes) {
-  return page.evaluate(`
-    fetch(${JSON.stringify(url)}, {
-      credentials: 'include',
-      headers: { authorization: ${JSON.stringify(authHeader)} }
-    })
-      .then((response) => response.blob())
-      .then((blob) => {
-        if (!blob.type.startsWith('image/')) {
-          return blob.text().then((text) => ({ type: 'text', text }));
-        }
-        if (!${Boolean(wantBytes)}) return { type: 'image', mime: blob.type, dataUrl: '' };
-        return new Promise((resolve) => {
-          const reader = new FileReader();
-          reader.onload = () => resolve({ type: 'image', mime: blob.type, dataUrl: String(reader.result) });
-          reader.onerror = () => resolve({ type: 'image', mime: blob.type, dataUrl: '' });
-          reader.readAsDataURL(blob);
-        });
-      })
-      .catch(() => ({ type: 'text', text: '' }))
-  `);
-}
-
-// Boundary normalizer for a fetched attachment's raw hop-2 body. Confirmed
-// live: a Deep Research report's content is JSON shaped like
-// `normalizeReportFileJson` expects, but a plain generated file (e.g. a
-// code-interpreter markdown output) returns its content as raw
-// `text/markdown` — not JSON at all. JSON that parses but isn't report-shaped
-// stays dropped (existing, intentional behavior for non-report uploads); only
-// genuinely non-JSON text is promoted to a generic `file` entry.
-function normalizeAttachedFileContent(rawText, name) {
-  const parsed = safeJsonParse(rawText);
-  if (parsed !== null) {
-    const report = normalizeReportFileJson(parsed);
-    return report ? { role: 'report', text: report.text, title: report.title } : null;
-  }
-  const text = typeof rawText === 'string' ? rawText.trim() : '';
-  return text ? { role: 'file', text, title: name } : null;
-}
-
-async function fetchAttachedFileEntry(page, downloadUrl, authHeader, wantBytes) {
-  const content = await fetchSignedContent(page, downloadUrl, authHeader);
-  if (!content.url) return null;
-
-  const body = await fetchBodyInPage(page, content.url, authHeader, wantBytes);
-  if (body?.type === 'image') {
-    return {
-      role: ATTACHMENT_KIND.IMAGE,
-      title: content.name,
-      mime: body.mime || '',
-      dataUrl: body.dataUrl || '',
-      src: content.url,
-      authHeader
-    };
-  }
-
-  return normalizeAttachedFileContent(body?.text ?? '', content.name);
+function attachmentsOf(rawMessages) {
+  return rawMessages.flatMap((message) => (Array.isArray(message.attachments) ? message.attachments : []));
 }
 
 // Clicks file entry `index`, captures the network request it fires to
@@ -192,40 +123,10 @@ async function fetchAttachedFile(page, index, wantBytes) {
   const downloadUrl = entry?.url || '';
   const authHeader = entry?.requestHeaders?.authorization || entry?.requestHeaders?.Authorization || '';
 
-  const fileEntry = downloadUrl ? await fetchAttachedFileEntry(page, downloadUrl, authHeader, wantBytes) : null;
+  const fileEntry = downloadUrl ? await fetchAttachedFileEntry(page, downloadUrl, authHeader, { wantBytes }) : null;
 
-  await page
-    .evaluate(`(() => {
-      const btn = document.querySelector(${JSON.stringify(CLOSE_VIEWER_SELECTOR)});
-      if (btn) btn.click();
-    })()`)
-    .catch(() => {});
-
+  await clickIfPresent(page, CLOSE_VIEWER_SELECTOR);
   return fileEntry;
-}
-
-// An image has no inline form — `--files-inline` cannot print bytes — so it is
-// always a marker entry, and its id continues the same per-kind sequence the
-// in-page scrape started.
-function imageAttachmentEntry(fileEntry, context) {
-  context.counters.image += 1;
-  const id = attachmentId(ATTACHMENT_KIND.IMAGE, context.counters.image);
-  return {
-    role: ATTACHMENT_KIND.IMAGE,
-    title: fileEntry.title,
-    text: markerFor(id),
-    attachments: [
-      {
-        id,
-        kind: ATTACHMENT_KIND.IMAGE,
-        name: fileEntry.title,
-        src: fileEntry.src,
-        mime: fileEntry.mime,
-        dataUrl: fileEntry.dataUrl,
-        authHeader: fileEntry.authHeader
-      }
-    ]
-  };
 }
 
 // Drives the "Files in chat" panel to resolve attachments — Deep Research
@@ -233,33 +134,50 @@ function imageAttachmentEntry(fileEntry, context) {
 // and appends each to `rawMessages` as a `[report-NN]` / `[file-NN]` marker
 // entry (or the inlined body under `--files-inline`). Independent of (and
 // additional to) the cross-origin-iframe resolution in read.js: that path is a
-// no-op against the real bridge (see PLAN.md), so this is the only path that
-// currently produces report bodies. No-ops entirely against a `page` that
-// lacks network-capture support (older test doubles).
+// no-op against the real bridge (see docs/INLINE_DOCUMENTS_AND_IMAGES.md), so
+// this is the only path that currently produces report bodies. No-ops entirely
+// against a `page` that lacks network-capture support (older test doubles).
 export async function resolveReportFiles(rawMessages, page, context) {
   if (typeof page.startNetworkCapture !== 'function' || typeof page.readNetworkCapture !== 'function') return;
 
-  let fileCount = await openFilesInChatPanel(page);
-  if (!fileCount) return;
+  let labels = await openFilesInChatPanel(page);
+  // Each click costs a menu reopen, the click and a network poll (~5-9 s), so
+  // an entry is skipped when its outcome is already known: an attachment the
+  // transcript already holds under that name, any image once the conversation
+  // JSON has positioned every image (confirmed live: 35 generated images, none
+  // of them named, cost a 5 minute read), or a file the panel lists a second
+  // time (which fires no request at all and would burn the whole poll budget).
+  // ponytail: matched by file name — an entry exposes nothing else. A second,
+  // different upload reusing a name is skipped too, and so is an image that
+  // exists only as a download link. Compare ids if the panel ever exposes them.
+  const known = new Set(attachmentsOf(rawMessages).map((attachment) => attachment.name).filter(Boolean));
+  const isKnown = (label) => known.has(label) || (context.imagesPositioned && isImageFileName(label));
+  let panelOpen = labels.length > 0;
 
-  for (let index = 0; index < fileCount; index += 1) {
+  for (let index = 0; index < labels.length; index += 1) {
+    const label = labels[index];
+    if (label && isKnown(label)) continue;
+    if (!panelOpen) {
+      labels = await openFilesInChatPanel(page);
+      if (index >= labels.length) break;
+    }
+    panelOpen = false;
+    if (label) known.add(label);
+
     const fileEntry = await fetchAttachedFile(page, index, Boolean(context.filesOutputDir));
     // An upload already scraped as an <img> in its own message turn is listed
     // here too; the in-turn one keeps its position in the transcript, so the
     // panel duplicate is dropped rather than given a second id.
-    const isDuplicateImage =
-      fileEntry?.role === ATTACHMENT_KIND.IMAGE && hasImageForAsset(rawMessages, fileEntry.src);
-    if (fileEntry && !isDuplicateImage) {
-      rawMessages.push(
-        fileEntry.role === ATTACHMENT_KIND.IMAGE
-          ? imageAttachmentEntry(fileEntry, context)
-          : textAttachmentEntry(fileEntry, context)
-      );
-    }
-
-    if (index < fileCount - 1) {
-      fileCount = await openFilesInChatPanel(page);
-      if (!fileCount) break;
-    }
+    // A report the conversation JSON already delivered is listed here under a
+    // label of its own, so that one is recognized by its body instead.
+    const isDuplicate =
+      fileEntry?.role === ATTACHMENT_KIND.IMAGE
+        ? hasImageForAsset(rawMessages, fileEntry.src)
+        : attachmentsOf(rawMessages).some((attachment) => attachment.text && attachment.text === fileEntry?.text);
+    if (fileEntry && !isDuplicate) rawMessages.push(attachmentEntry(fileEntry, context));
   }
+
+  // A clicked entry swaps the panel for the viewer, which is closed above; a
+  // panel nothing was clicked in is still open.
+  if (panelOpen) await clickIfPresent(page, CLOSE_PANEL_SELECTOR);
 }

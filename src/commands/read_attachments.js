@@ -26,6 +26,7 @@ const MIME_EXTENSIONS = Object.freeze({
   'image/svg+xml': '.svg'
 });
 const DEFAULT_IMAGE_EXTENSION = '.png';
+const IMAGE_FILE_NAME_PATTERN = /\.(png|jpe?g|gif|webp|svg)$/i;
 const DEFAULT_TEXT_EXTENSION = Object.freeze({ report: '.md', file: '.txt' });
 
 let nodeFetchImpl = (url) => fetch(url);
@@ -38,6 +39,10 @@ export function __setAttachmentDepsForTest(deps) {
 
 export function __resetAttachmentDepsForTest() {
   nodeFetchImpl = (url) => fetch(url);
+}
+
+export function isImageFileName(name) {
+  return IMAGE_FILE_NAME_PATTERN.test(name);
 }
 
 export function attachmentId(kind, index) {

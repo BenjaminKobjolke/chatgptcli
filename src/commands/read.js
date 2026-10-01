@@ -1,9 +1,10 @@
 import { mkdirSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { CHATGPT_ROOT_URL, CHAT_PATH_MARKER, isChatHost } from '../core/chatgpt_site.js';
 import { AppError, ERROR_CODE, EXIT_CODE } from '../core/errors.js';
 import { connectBridge, loadBrowserBridge } from '../core/opencli.js';
 import { resolveBridgeProfile } from '../core/settings.js';
-import { readConversation, resolveImagePointers } from './read_conversation.js';
+import { readConversation, resolveImagePointers, resolvePendingAttachments } from './read_conversation.js';
 import { readScrapeScript, reportFrameScript } from './read_scrape.js';
 import { resolveReportFiles } from './read_files_panel.js';
 import {
@@ -22,13 +23,6 @@ const NO_MESSAGES_MESSAGE = 'No messages found in this chat';
 const NO_MESSAGES_HINT =
   'Check that the bridge browser is logged into chatgpt.com (`chatgptcli launch`) and shows the chat. ' +
   'If it does, ChatGPT changed its page or API — update chatgptcli.';
-const CHATGPT_ROOT_URL = 'https://chatgpt.com/';
-const CHAT_HOSTS = Object.freeze(['chatgpt.com', 'chat.openai.com']);
-const CHAT_PATH_PREFIX = '/c/';
-
-function isChatHost(hostname) {
-  return CHAT_HOSTS.includes(hostname) || hostname.endsWith('.chatgpt.com');
-}
 
 // Location test for a bare `read` (no URL argument). Deliberately NOT
 // `normalizeChatUrl`: that one normalizes *user input*, so it coerces any
@@ -43,7 +37,7 @@ function chatUrlFromLocation(href) {
   } catch {
     return null;
   }
-  return isChatHost(url.hostname) && url.pathname.startsWith(CHAT_PATH_PREFIX) ? url.href : null;
+  return isChatHost(url.hostname) && url.pathname.includes(CHAT_PATH_MARKER) ? url.href : null;
 }
 
 let openChatImpl = openChat;
@@ -150,7 +144,7 @@ export function normalizeChatUrl(target) {
 }
 
 // `page.goto` on a URL the tab is already sitting on is a no-op (no reload) —
-// confirmed live (see PLAN.md) to leave a stale, already-open chat tab in a
+// confirmed live to leave a stale, already-open chat tab in a
 // broken DOM state (e.g. the "Files in chat" panel silently failing to
 // resolve). Navigating to a neutral URL first forces a real reload before
 // landing on the target, which fixed the flakiness in repeated live testing.
@@ -222,10 +216,12 @@ export async function runRead(input) {
     const context = {
       counters: { image: Number(result?.imageCount) || 0, report: 0, file: 0 },
       filesInline: Boolean(input.filesInline),
+      imagesPositioned: Boolean(result?.imagesPositioned),
       // Read by the panel resolver to decide whether an image's bytes must
       // travel back with it — its signed URL may not survive a second fetch.
       filesOutputDir: input.filesOutputDir || ''
     };
+    await resolvePendingAttachments({ page, messages: rawMessages, authHeader: result?.authHeader, context });
     await resolveReportFrames(rawMessages, page, context);
     await resolveReportFiles(rawMessages, page, context);
 

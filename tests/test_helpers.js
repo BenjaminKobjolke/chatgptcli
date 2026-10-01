@@ -15,21 +15,32 @@ export function fakeReadPage(evaluateResult, pageExtras = {}) {
 // and the two-hop in-page fetch. `evaluateResult` is what the initial
 // READ_SCRAPE_SCRIPT top-frame scrape returns; `fileEntries` describes each
 // file's download/content fetch chain, in files-panel order.
-export function fakeFilesPanelExtras(evaluateResult, { menuButtonPresent = true, panelMenuItemPresent = true, fileButtonCount = 0, fileEntries = [] } = {}) {
+// `fileLabels` are the entries' aria-labels (file names; '' when the markup has
+// none) and `clicks` collects every entry index that was actually clicked,
+// plus 'close-panel' when the panel itself was closed.
+export function fakeFilesPanelExtras(
+  evaluateResult,
+  { menuButtonPresent = true, panelMenuItemPresent = true, fileButtonCount = 0, fileEntries = [], fileLabels, clicks = [] } = {}
+) {
   let lastClickedIndex = -1;
 
   const evaluate = async (script) => {
     if (script.includes('MESSAGE_ATTR')) return evaluateResult;
     // One script opens the "More" menu and picks the panel item.
     if (script.includes('conversation-options-button')) return menuButtonPresent && panelMenuItemPresent;
-    if (script.includes('.length') && script.includes('li button')) return fileButtonCount;
+    if (script.includes('getAttribute') && script.includes('li button')) return fileLabels ?? Array(fileButtonCount).fill('');
     if (script.includes('Close fullscreen view')) return true;
+    if (script.includes('Close panel')) {
+      clicks.push('close-panel');
+      return true;
+    }
 
     const clickMatch = script.includes('li button') && script.match(/\)\[(\d+)\]/);
     if (clickMatch) {
       const index = Number(clickMatch[1]);
-      if (index >= fileButtonCount) return false;
+      if (index >= (fileLabels?.length ?? fileButtonCount)) return false;
       lastClickedIndex = index;
+      clicks.push(index);
       return true;
     }
 
@@ -62,9 +73,18 @@ export function fakeFilesPanelExtras(evaluateResult, { menuButtonPresent = true,
 
 // Serves the backend-conversation path of `read`: the in-page conversation
 // fetch, the files-download hop that turns an image asset pointer into a signed
-// URL, and the image bytes. `requests` collects every file id hop 1 was asked for.
-export function fakeConversationExtras(conversation, { status = 200, dataUrl = '', requests = [] } = {}) {
+// URL, and the image bytes. `requests` collects every file id hop 1 was asked
+// for; `sandboxFiles` maps a generated file's sandbox path to its content.
+export function fakeConversationExtras(conversation, { status = 200, dataUrl = '', requests = [], sandboxFiles = {} } = {}) {
   const evaluate = async (script) => {
+    if (script.includes('/interpreter/download')) {
+      const path = Object.keys(sandboxFiles).find((entry) => script.includes(encodeURIComponent(entry)));
+      return path ? JSON.stringify({ download_url: `https://chatgpt.com/backend-api/estuary/content?sandbox=${encodeURIComponent(path)}`, file_name: path }) : '';
+    }
+    if (script.includes('blob.text()')) {
+      const path = Object.keys(sandboxFiles).find((entry) => script.includes(`sandbox=${encodeURIComponent(entry)}`));
+      return path ? { type: 'text', text: sandboxFiles[path] } : null;
+    }
     if (script.includes('/backend-api/conversation/')) {
       return { url: 'https://chatgpt.com/c/abc', status, authHeader: 'Bearer token', body: JSON.stringify(conversation) };
     }

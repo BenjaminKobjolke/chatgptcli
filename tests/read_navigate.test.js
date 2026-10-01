@@ -1,7 +1,8 @@
 import { describe, expect, test } from 'bun:test';
 import { __test__ as readHelpers } from '../src/commands/read.js';
 
-// Regression test for the reload-flakiness fix documented in PLAN.md:
+// Regression test for the reload-flakiness fix documented in
+// docs/INLINE_DOCUMENTS_AND_IMAGES.md:
 // `page.goto` on an unchanged SPA URL is a no-op, so a stale, already-open
 // tab can leave the "Files in chat" panel in a broken DOM state. Navigating
 // to a neutral URL first forces a real reload before landing on the target.
@@ -65,6 +66,13 @@ describe('chatUrlFromLocation', () => {
   test('accepts a chat URL on every supported host', () => {
     expect(readHelpers.chatUrlFromLocation('https://chatgpt.com/c/abc123')).toBe('https://chatgpt.com/c/abc123');
     expect(readHelpers.chatUrlFromLocation('https://chat.openai.com/c/abc123')).toBe('https://chat.openai.com/c/abc123');
+  });
+
+  // A chat inside a project lives under the project's path, not at the root.
+  test('accepts a chat inside a project', () => {
+    const url = 'https://chatgpt.com/g/g-p-123-name/c/abc123';
+    expect(readHelpers.chatUrlFromLocation(url)).toBe(url);
+    expect(readHelpers.chatUrlFromLocation('https://chatgpt.com/g/g-p-123-name/project')).toBeNull();
   });
 
   test('returns null for anything that is not a chat, without throwing', () => {

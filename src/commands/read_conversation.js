@@ -8,6 +8,7 @@
 //
 // The endpoints are OpenAI-private and undocumented. When they stop answering,
 // `readConversation` returns `null` and read.js falls back to the DOM scrape.
+import { CHAT_PATH_MARKER } from '../core/chatgpt_site.js';
 import {
   ATTACHMENT_KIND,
   FILE_DOWNLOAD_URL_PART,
@@ -18,10 +19,10 @@ import {
   markerFor,
   safeJsonParse
 } from './read_attachments.js';
+import { attachmentEntry, fetchAttachedFileEntry, normalizeReportFileJson } from './read_file_content.js';
 
 const SESSION_URL = '/api/auth/session';
 const CONVERSATION_URL = '/backend-api/conversation/';
-const CHAT_PATH_MARKER = '/c/';
 const STATUS_OK = 200;
 const ROLE = Object.freeze({ USER: 'user', ASSISTANT: 'assistant', TOOL: 'tool' });
 const VISIBLE_CONTENT_TYPES = Object.freeze(['text', 'multimodal_text']);
@@ -31,6 +32,10 @@ const IMAGE_PART_TYPE = 'image_asset_pointer';
 // that the web UI swaps for source pills; in a transcript they are noise.
 const CITATION_PATTERN = /[^]*/g;
 const HTTP_URL_PATTERN = /^https?:/i;
+// A generated file is offered as a markdown link to its path in the code sandbox.
+const SANDBOX_LINK_PATTERN = /sandbox:(\/mnt\/data\/[^\s)\]"']+)/g;
+const SANDBOX_DOWNLOAD_PATH = '/interpreter/download';
+const FIRST_HEADING_PATTERN = /^#\s+(.+)$/m;
 
 // Kept thin: it only moves bytes out of the page. Everything that interprets
 // them runs in Node, where it can be tested. The chat id comes from the tab's
@@ -128,25 +133,93 @@ function messageEntry(message, imageOffset) {
   return { role: fromTool ? ROLE.ASSISTANT : role, text: blocks.join('\n\n'), title: '', attachments };
 }
 
+// Reports and generated files are found here but only become entries in
+// `resolvePendingAttachments`: their ids come from counters read.js owns, and a
+// file's content is a network fetch away. Until then each is a placeholder at
+// its position in the chat — empty, so one that never resolves drops out of
+// the transcript like any other empty entry.
+function pendingEntry(role, pending) {
+  return { role, text: '', title: '', attachments: [], pending };
+}
+
+// A Deep Research report is not a file reference: its whole markdown body sits
+// in the widget state of the tool message that rendered the report card
+// (confirmed live), so it needs no download at all. The title ChatGPT shows
+// is the body's own first heading; the plan carries only a working title.
+function pendingReport(message) {
+  const state = safeJsonParse(message?.metadata?.chatgpt_sdk?.widget_state);
+  if (!state || typeof state !== 'object') return null;
+  const report = normalizeReportFileJson({ title: state.plan?.title, widget_state: state });
+  if (!report) return null;
+  const title = report.text.match(FIRST_HEADING_PATTERN)?.[1].trim() || report.title;
+  return pendingEntry(ATTACHMENT_KIND.REPORT, { role: ATTACHMENT_KIND.REPORT, text: report.text, title });
+}
+
+// A generated file's `file_<id>` is nowhere in the JSON (confirmed live). The
+// reply that offers it links its sandbox path instead, and the interpreter
+// download endpoint turns message id + path into the same signed-URL answer
+// the files endpoint gives.
+function pendingFiles(message, text, conversationId) {
+  if (message.author?.role !== ROLE.ASSISTANT || !message.id || !conversationId) return [];
+  const paths = new Set(Array.from(text.matchAll(SANDBOX_LINK_PATTERN), (match) => match[1]));
+  return Array.from(paths, (path) =>
+    pendingEntry(ATTACHMENT_KIND.FILE, {
+      downloadUrl:
+        `${CONVERSATION_URL}${conversationId}${SANDBOX_DOWNLOAD_PATH}` +
+        `?message_id=${encodeURIComponent(message.id)}&sandbox_path=${encodeURIComponent(path)}`
+    })
+  );
+}
+
 function conversationMessages(conversation) {
   const messages = [];
   let imageCount = 0;
   for (const message of activePath(conversation)) {
+    const report = pendingReport(message);
+    if (report) {
+      messages.push(report);
+      continue;
+    }
     const entry = messageEntry(message, imageCount);
     if (!entry) continue;
     imageCount += entry.attachments.length;
-    messages.push(entry);
+    messages.push(entry, ...pendingFiles(message, entry.text, conversation.conversation_id));
   }
   return { messages, imageCount };
 }
 
 // Returns the same `{ url, messages, imageCount }` shape as the DOM scrape so
 // read.js consumes either source through one code path, plus the bearer header
-// later fetches need.
+// later fetches need. `imagesPositioned` tells the panel resolver that every
+// image of the chat already has its marker.
 export async function readConversation(page) {
   const fetched = normalizeConversationFetch(await page.evaluate(conversationFetchScript()));
   if (!fetched) return null;
-  return { url: fetched.url, authHeader: fetched.authHeader, ...conversationMessages(fetched.conversation) };
+  return {
+    url: fetched.url,
+    authHeader: fetched.authHeader,
+    imagesPositioned: true,
+    ...conversationMessages(fetched.conversation)
+  };
+}
+
+// Turns the placeholders `conversationMessages` left behind into report and
+// file entries, in place. A file that no longer resolves (an expired sandbox)
+// stays an empty placeholder; the Files-in-chat panel still gets its chance.
+export async function resolvePendingAttachments({ page, messages, authHeader, context }) {
+  for (const message of messages) {
+    const { pending } = message;
+    if (!pending) continue;
+    delete message.pending;
+
+    const fileEntry = pending.downloadUrl
+      ? await fetchAttachedFileEntry(page, pending.downloadUrl, authHeader, {
+          wantBytes: Boolean(context.filesOutputDir),
+          isGeneratedFile: true
+        }).catch(() => null)
+      : pending;
+    if (fileEntry) Object.assign(message, attachmentEntry(fileEntry, context));
+  }
 }
 
 // An image in the JSON is an asset pointer (`sediment://file_<id>`), not a
