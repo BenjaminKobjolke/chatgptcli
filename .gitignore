@@ -21,3 +21,5 @@ src/graphify-out/
 feedback
 tickets/
 tools/.tw-run-*
+tmp/commit_msg.tmp
+.reasonix/
