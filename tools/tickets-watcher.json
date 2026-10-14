@@ -39,5 +39,13 @@
     ],
     "tests": true
   },
-  "analysis_tests_answered": true
+  "analysis_tests_answered": true,
+  "analysis_command_states": {
+    "tools\\analyze_code.bat": {
+      "code_quality": "green"
+    },
+    "tools\\run_tests.bat": {
+      "test": "green"
+    }
+  }
 }
