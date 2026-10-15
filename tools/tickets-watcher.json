@@ -19,6 +19,7 @@
     "build_shift.bat",
     "install_local.bat",
     "package_version_get.bat",
+    "run_tests.bat",
     "version_get.bat"
   ],
   "analysis_commands_seen": {
