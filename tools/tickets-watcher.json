@@ -1,9 +1,9 @@
 {
   "files": {
-    "TICKETS_WATCHER_COMMANDS.md": 2
+    "TICKETS_WATCHER_COMMANDS.md": 3
   },
   "analysis_commands": [
-    "tools\\analyze_code.bat",
+    "tools\\analyze_changed_and_new_files.bat",
     "tools\\run_tests.bat"
   ],
   "command_check_scripts": [
@@ -48,5 +48,10 @@
     "tools\\run_tests.bat": {
       "test": "green"
     }
-  }
+  },
+  "analysis_command_kinds": {
+    "tools\\analyze_changed_and_new_files.bat": "code_quality",
+    "tools\\run_tests.bat": "test"
+  },
+  "project_id": 12299
 }
