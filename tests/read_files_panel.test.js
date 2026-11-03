@@ -22,14 +22,14 @@ afterEach(() => {
 const REPORT_BODY = '# Report Title\n\nBody text.';
 
 function stubReportChat(title = 'Report Title') {
+  const waits = [];
   const evaluateResult = {
     url: 'https://chatgpt.com/c/abc',
     messages: [{ role: 'user', text: 'Research X', title: '' }]
   };
   __setReadDepsForTest({
-    openChat: async () => fakeReadPage(
-      evaluateResult,
-      fakeFilesPanelExtras(evaluateResult, {
+    openChat: async () => {
+      const pageExtras = fakeFilesPanelExtras(evaluateResult, {
         fileButtonCount: 1,
         fileEntries: [
           {
@@ -43,14 +43,17 @@ function stubReportChat(title = 'Report Title') {
             }
           }
         ]
-      })
-    )
+      });
+      pageExtras.wait = async (seconds) => waits.push(seconds);
+      return fakeReadPage(evaluateResult, pageExtras);
+    }
   });
+  return waits;
 }
 
 describe('read: Files-in-chat report resolution', () => {
   test('a deep research report resolves to a marker entry by default', async () => {
-    stubReportChat();
+    const waits = stubReportChat();
 
     const stdout = captureStdout();
     const code = await runCli(['read', 'abc', '-f', 'json']);
@@ -64,6 +67,7 @@ describe('read: Files-in-chat report resolution', () => {
       text: '[report-01]',
       attachments: [{ id: 'report-01', kind: 'report', name: 'Report Title' }]
     });
+    expect(waits).toEqual([1]);
   });
 
   test('--files-inline restores the inlined report body', async () => {

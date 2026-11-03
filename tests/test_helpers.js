@@ -3,12 +3,7 @@
 // module only carries the reusable fake-page builders and stdout/stderr
 // capture helpers.
 
-export function fakeReadPage(evaluateResult, pageExtras = {}) {
-  return {
-    bridge: { close: async () => {} },
-    page: { evaluate: async () => evaluateResult, ...pageExtras }
-  };
-}
+export { fakeReadPage } from '../.omx/reference/opencli-app-kit/src/testing/test_helpers.js';
 
 // Drives resolveReportFiles' Files-in-chat flow: the "More" menu, the
 // "View files in chat" panel, per-file click + network-capture discovery,
@@ -108,34 +103,9 @@ export function fakeConversationExtras(
   return { evaluate };
 }
 
-function capture(stream) {
-  const chunks = [];
-  stream.write = (data) => {
-    chunks.push(String(data));
-    return true;
-  };
-  return chunks;
-}
-
-export function captureStdout() {
-  return capture(process.stdout);
-}
-
-export function captureStderr() {
-  return capture(process.stderr);
-}
-
-// Bind once per test file, then pass to restoreStdio() from that file's own
-// beforeEach/afterEach (bun test hooks are per-file, so the hooks themselves
-// can't move here — only the bind/restore bodies).
-export function bindOriginalStdio() {
-  return {
-    stdout: process.stdout.write.bind(process.stdout),
-    stderr: process.stderr.write.bind(process.stderr)
-  };
-}
-
-export function restoreStdio(originals) {
-  process.stdout.write = originals.stdout;
-  process.stderr.write = originals.stderr;
-}
+export {
+  captureStdout,
+  captureStderr,
+  bindOriginalStdio,
+  restoreStdio
+} from '../.omx/reference/opencli-app-kit/src/testing/test_helpers.js';

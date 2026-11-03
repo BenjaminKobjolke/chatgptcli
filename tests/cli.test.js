@@ -154,7 +154,7 @@ describe('cli', () => {
     const code = await runCli(['ask']);
 
     expect(code).toBe(2);
-    expect(stderr.join('')).toContain('INPUT_INVALID');
+    expect(stderr.join('')).toBe('INPUT_INVALID: Missing prompt\nHint: Usage: chatgptcli ask "your prompt"\n');
   });
 
   test('ask --file inlines the file content into the prompt', async () => {
