@@ -101,6 +101,8 @@ This validates:
 - `chatgptcli doctor` forwards to `opencli doctor` (source checkout only; the compiled exe uses `setup`).
 - `chatgptcli setup` is a preflight checker: local prerequisites plus whether a browser profile is connected to the Browser Bridge. It changes nothing.
 - By default, `chatgptcli` looks for `opencli` in `.omx/reference/opencli`.
+- The shared app kit is linked at `.omx/reference/opencli-app-kit`; this checkout also uses it as a local package dependency.
+- Keep `.omx/reference/opencli` pointed at your OpenCLI checkout. The app-kit checkout has its own `.omx/reference/opencli` link for bundling the Browser Bridge.
 - If your `opencli` lives somewhere else, set `CHATGPTCLI_OPENCLI_ROOT=/path/to/opencli`.
 - If you want to point directly at a built entry file, set `CHATGPTCLI_OPENCLI_MAIN=/path/to/opencli/dist/src/main.js`.
 

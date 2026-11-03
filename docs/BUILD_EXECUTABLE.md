@@ -2,6 +2,16 @@
 
 Compile the CLI into a single self-contained `chatgptcli.exe` using Bun's `--compile`. The opencli Browser Bridge (and its dependencies, including the bridge daemon) is bundled into the exe, so at runtime it needs **no Bun, no Node, and no `.omx/reference/opencli` checkout**.
 
+## Local references
+
+The app keeps the OpenCLI checkout at `.omx/reference/opencli` and links the shared library at `.omx/reference/opencli-app-kit`. Create the app-kit junction from the repository root on Windows:
+
+```bat
+mklink /J .omx\reference\opencli-app-kit D:\GIT\BenjaminKobjolke\opencli-app-kit
+```
+
+The app-kit checkout has its own `.omx/reference/opencli` junction to the OpenCLI checkout; the library uses that reference when compiling its bridge and daemon imports.
+
 ## Build
 
 ```bash
