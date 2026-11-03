@@ -16,11 +16,11 @@ import {
   attachmentId,
   collectTargets,
   fetchSignedContent,
-  markerFor,
-  safeJsonParse
+  markerFor
 } from './read_attachments.js';
 import { attachmentEntry, fetchAttachedFileEntry, normalizeReportFileJson } from './read_file_content.js';
 import { conversationFetchFailure } from './read_failure.js';
+import { safeJsonParse } from '../../.omx/reference/opencli-app-kit/src/core/page_fetch.js';
 
 const SESSION_URL = '/api/auth/session';
 const CONVERSATION_URL = '/backend-api/conversation/';

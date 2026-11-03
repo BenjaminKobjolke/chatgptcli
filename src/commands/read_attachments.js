@@ -9,6 +9,8 @@
 import { writeFileSync } from 'node:fs';
 import { extname, join, sep } from 'node:path';
 import { AppError, ERROR_CODE } from '../core/errors.js';
+import { decodeDataUrl, imageDataUrlScript, safeJsonParse } from '../../.omx/reference/opencli-app-kit/src/core/page_fetch.js';
+import { writeStderr } from '../../.omx/reference/opencli-app-kit/src/core/cli_shell.js';
 
 export const ATTACHMENT_KIND = Object.freeze({
   IMAGE: 'image',
@@ -17,7 +19,6 @@ export const ATTACHMENT_KIND = Object.freeze({
 });
 
 export const FILE_DOWNLOAD_URL_PART = '/backend-api/files/download/';
-const DATA_URL_PATTERN =/^data:([^;,]*)[^,]*,(.*)$/s;
 const MIME_EXTENSIONS = Object.freeze({
   'image/png': '.png',
   'image/jpeg': '.jpg',
@@ -99,35 +100,6 @@ export function textAttachmentEntry({ role, title, text }, context, extraAttachm
   };
 }
 
-// `page.evaluate` only returns JSON-serializable values, so the image comes
-// back as a data URL rather than bytes. Also used by read_files_panel.js for a
-// binary attachment listed in the Files-in-chat panel, which needs the bearer
-// token the panel click exposed.
-export function imageDataUrlScript(url, authHeader = '') {
-  const init = authHeader
-    ? `{ credentials: 'include', headers: { authorization: ${JSON.stringify(authHeader)} } }`
-    : `{ credentials: 'include' }`;
-  return `
-    fetch(${JSON.stringify(url)}, ${init})
-      .then((response) => (response.ok ? response.blob() : null))
-      .then((blob) => (blob ? new Promise((resolve) => {
-        const reader = new FileReader();
-        reader.onload = () => resolve(reader.result);
-        reader.onerror = () => resolve('');
-        reader.readAsDataURL(blob);
-      }) : ''))
-      .catch(() => '')
-  `;
-}
-
-export function safeJsonParse(text) {
-  try {
-    return JSON.parse(text);
-  } catch {
-    return null;
-  }
-}
-
 // A generic (non-report) Files-in-chat entry — a plain code-interpreter/canvas
 // output such as a generated .md file — has no `file_<id>` reference in its
 // own DOM; its filename can survive as the `fn=` query param on the signed
@@ -157,13 +129,6 @@ export async function fetchSignedContent(page, downloadUrl, authHeader) {
   const url = meta && typeof meta.download_url === 'string' ? meta.download_url : '';
   const fileName = meta && typeof meta.file_name === 'string' ? meta.file_name.split(/[\\/]/).pop() : '';
   return { url, name: extractContentFilename(url) || fileName };
-}
-
-function decodeDataUrl(value) {
-  const match = typeof value === 'string' ? value.match(DATA_URL_PATTERN) : null;
-  if (!match) return null;
-  const buffer = Buffer.from(match[2], 'base64');
-  return buffer.length ? { mime: match[1], buffer } : null;
 }
 
 // The same upload can surface twice: once as an <img> in its message turn and
@@ -259,7 +224,7 @@ export function collectTargets(messages, fileId) {
 // and looked exactly like a chat whose attachment was never found. stdout stays
 // machine-readable, so the warning belongs on stderr (as in doctor.js).
 function warnSkipped(id, reason) {
-  process.stderr.write(`attachment ${id}: download failed (${reason}), marker left in place\n`);
+  writeStderr(`attachment ${id}: download failed (${reason}), marker left in place`);
 }
 
 // Writes every attachment (or just `fileId`) into `filesOutputDir`, rewriting

@@ -1,4 +1,4 @@
-import { AppError, ERROR_CODE, EXIT_CODE, exitCodeForError, toAppError } from './core/errors.js';
+import { AppError, ERROR_CODE, EXIT_CODE } from './core/errors.js';
 import { runAsk } from './commands/ask.js';
 import { runRead, runSwitch } from './commands/read.js';
 import { runDoctor } from './commands/doctor.js';
@@ -7,9 +7,11 @@ import { runLaunch, runSetChrome, runSwitchSession } from './commands/chrome.js'
 import { parseAskArgs, parseDoctorArgs, parseReadArgs, parseSetChromeArgs, parseSetupArgs, parseSwitchArgs } from './cli_args.js';
 import { checkMinVersion } from './core/min_version.js';
 import { IS_COMPILED } from './core/opencli.js';
+import { createCliShell, writeStderr, writeStdout } from '../.omx/reference/opencli-app-kit/src/core/cli_shell.js';
 import pkg from '../package.json';
 
 const VERSION = pkg.version;
+const cliShell = createCliShell({ appName: 'chatgptcli', version: VERSION });
 
 export async function runCli(argv) {
   const command = argv[0];
@@ -24,7 +26,7 @@ export async function runCli(argv) {
     return EXIT_CODE.SUCCESS;
   }
 
-  try {
+  return cliShell.runWithErrorHandling(async () => {
     // --help/--version above stay usable on a stale exe so the update flow can verify.
     const updateMessage = checkMinVersion(VERSION);
     if (updateMessage) {
@@ -77,14 +79,7 @@ export async function runCli(argv) {
     throw new AppError(ERROR_CODE.INPUT_INVALID, `Unknown command: ${command}`, {
       hint: 'Use --help to see supported commands.'
     });
-  } catch (error) {
-    const err = toAppError(error);
-    writeStderr(`${err.code}: ${err.message}`);
-    if (err.hint) {
-      writeStderr(`Hint: ${err.hint}`);
-    }
-    return exitCodeForError(err);
-  }
+  });
 }
 
 function helpText() {
@@ -117,12 +112,4 @@ function helpText() {
 function emitResult(result) {
   writeStdout(result.output);
   return result.exitCode;
-}
-
-function writeStdout(message) {
-  process.stdout.write(`${message}\n`);
-}
-
-function writeStderr(message) {
-  process.stderr.write(`${message}\n`);
 }

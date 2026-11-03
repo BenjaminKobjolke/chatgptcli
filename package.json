@@ -17,5 +17,8 @@
   },
   "devDependencies": {
     "eslint": "^10.8.1"
+  },
+  "dependencies": {
+    "opencli-app-kit": "link:./.omx/reference/opencli-app-kit"
   }
 }

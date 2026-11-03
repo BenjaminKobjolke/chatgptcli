@@ -1,10 +1,11 @@
 import { AppError, ERROR_CODE, EXIT_CODE } from '../core/errors.js';
-import { connectBridge, loadBrowserBridge } from '../core/opencli.js';
+import { withSitePage } from '../../.omx/reference/opencli-app-kit/src/core/session.js';
 import { resolveBridgeProfile } from '../core/settings.js';
 import { askOnPage, isSuccessfulResponse, normalizeResponse, shouldRetry } from './ask_page.js';
 
 let browserAskRunner = runBrowserAsk;
 let sleepImpl = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+let withSitePageImpl = withSitePage;
 
 export function __setAskDepsForTest(deps) {
   if (deps.browserAskRunner) {
@@ -13,11 +14,15 @@ export function __setAskDepsForTest(deps) {
   if (deps.sleep) {
     sleepImpl = deps.sleep;
   }
+  if (deps.withSitePage) {
+    withSitePageImpl = deps.withSitePage;
+  }
 }
 
 export function __resetAskDepsForTest() {
   browserAskRunner = runBrowserAsk;
   sleepImpl = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+  withSitePageImpl = withSitePage;
 }
 
 export async function runAsk(input) {
@@ -76,25 +81,21 @@ export async function runAsk(input) {
 }
 
 async function runBrowserAsk(input) {
-  const { BrowserBridge } = await loadBrowserBridge();
-  const bridge = new BrowserBridge();
-
-  try {
-    const page = await connectBridge(bridge, {
-      timeout: Math.max(30, input.timeoutSeconds),
-      session: 'site:chatgpt',
-      preferredContextId: resolveBridgeProfile()
-    });
-
-    return await askOnPage(page, {
+  return withSitePageImpl({
+    appName: 'chatgptcli',
+    session: 'site:chatgpt',
+    timeout: Math.max(30, input.timeoutSeconds),
+    preferredContextId: resolveBridgeProfile()
+  }, async (page) => {
+    return askOnPage(page, {
       prompt: input.prompt,
       timeoutMs: input.timeoutSeconds * 1000,
       newChat: input.newChat
     });
-  } finally {
-    await bridge.close().catch(() => {});
-  }
+  });
 }
+
+export const __test__ = { runBrowserAsk };
 
 function renderResult(result, format) {
   if (format === 'text') {

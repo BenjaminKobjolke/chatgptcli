@@ -12,6 +12,7 @@
 // off the capture.
 import { ATTACHMENT_KIND, FILE_DOWNLOAD_URL_PART, hasImageForAsset, isImageFileName } from './read_attachments.js';
 import { attachmentEntry, fetchAttachedFileEntry } from './read_file_content.js';
+import { pollUntil } from '../../.omx/reference/opencli-app-kit/src/core/poll.js';
 
 // The testid is the older markup; the redesigned header only labels the button.
 const CONVERSATION_OPTIONS_BUTTON_SELECTOR =
@@ -30,12 +31,14 @@ const FILES_PANEL_POLL_ATTEMPTS = 10;
 // on timeout. Shared by the panel-population and download-request polls
 // below, which otherwise differ only in what they're probing for.
 async function pollForValue(page, probe) {
-  for (let attempt = 0; attempt < FILES_PANEL_POLL_ATTEMPTS; attempt += 1) {
+  const result = await pollUntil(page, async (attempt) => {
     const value = await probe();
-    if (value) return value;
-    if (attempt < FILES_PANEL_POLL_ATTEMPTS - 1) await page.wait(1);
-  }
-  return null;
+    if (value || attempt === FILES_PANEL_POLL_ATTEMPTS - 1) {
+      return { done: true, value: value || null };
+    }
+    return { done: false };
+  }, { attempts: FILES_PANEL_POLL_ATTEMPTS, delaySeconds: 1 });
+  return result.value;
 }
 
 // Both the viewer and the panel sit in the user's own, visible tab, so each is

@@ -8,9 +8,9 @@ import {
   attachmentId,
   fetchSignedContent,
   markerFor,
-  safeJsonParse,
   textAttachmentEntry
 } from './read_attachments.js';
+import { safeJsonParse } from '../../.omx/reference/opencli-app-kit/src/core/page_fetch.js';
 
 // Boundary normalizer (CODING_RULES "Boundary Normalizers") for a fetched
 // report file's JSON. A file in the panel that isn't a Deep Research report

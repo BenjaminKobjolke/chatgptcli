@@ -2,7 +2,7 @@ import { mkdirSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { CHATGPT_ROOT_URL, CHAT_PATH_MARKER, isChatHost } from '../core/chatgpt_site.js';
 import { AppError, ERROR_CODE, EXIT_CODE } from '../core/errors.js';
-import { connectBridge, loadBrowserBridge } from '../core/opencli.js';
+import { withSitePage } from '../../.omx/reference/opencli-app-kit/src/core/session.js';
 import { resolveBridgeProfile } from '../core/settings.js';
 import { readConversation, resolveImagePointers, resolvePendingAttachments } from './read_conversation.js';
 import { EMPTY_TRANSCRIPT_ERROR } from './read_failure.js';
@@ -37,16 +37,21 @@ function chatUrlFromLocation(href) {
   return isChatHost(url.hostname) && url.pathname.includes(CHAT_PATH_MARKER) ? url.href : null;
 }
 
-let openChatImpl = openChat;
+let openChatImpl = null;
+let withSitePageImpl = withSitePage;
 
 export function __setReadDepsForTest(deps) {
   if (deps.openChat) {
     openChatImpl = deps.openChat;
   }
+  if (deps.withSitePage) {
+    withSitePageImpl = deps.withSitePage;
+  }
 }
 
 export function __resetReadDepsForTest() {
-  openChatImpl = openChat;
+  openChatImpl = null;
+  withSitePageImpl = withSitePage;
 }
 
 // Matches a report placeholder's `reportFrameSrc` (from read_scrape.js) to a
@@ -163,33 +168,27 @@ async function navigateAndWaitForMessages(page, url) {
   }
 }
 
-async function openChat(input) {
-  const { BrowserBridge } = await loadBrowserBridge();
-  const bridge = new BrowserBridge();
-  const page = await connectBridge(bridge, {
-    timeout: 30,
-    session: 'site:chatgpt',
-    preferredContextId: resolveBridgeProfile()
-  });
-
-  // Without an argument the chat already open in the tab is the target — but it
-  // still needs the same hard reload, or the stale tab hides the "More" menu
-  // and the "Files in chat" panel and every attachment silently disappears.
-  const url = input.url || chatUrlFromLocation(await page.evaluate('window.location.href').catch(() => ''));
-  if (url) {
-    await navigateAndWaitForMessages(page, url);
-  }
-
-  return { bridge, page };
-}
-
 async function withOpenChat(input, fn) {
-  const { bridge, page } = await openChatImpl(input);
-  try {
-    return await fn(page);
-  } finally {
-    await bridge.close().catch(() => {});
+  if (openChatImpl) {
+    const { bridge, page } = await openChatImpl(input);
+    try {
+      return await fn(page);
+    } finally {
+      await bridge.close().catch(() => {});
+    }
   }
+
+  return withSitePageImpl({
+    appName: 'chatgptcli',
+    session: 'site:chatgpt',
+    timeout: 30,
+    preferredContextId: resolveBridgeProfile()
+  }, async (page) => {
+    // Without an argument the already open chat is the target, but still hard-reload it.
+    const url = input.url || chatUrlFromLocation(await page.evaluate('window.location.href').catch(() => ''));
+    if (url) await navigateAndWaitForMessages(page, url);
+    return fn(page);
+  });
 }
 
 export async function runSwitch(input) {
@@ -270,4 +269,4 @@ export async function runRead(input) {
   });
 }
 
-export const __test__ = { navigateAndWaitForMessages, chatUrlFromLocation };
+export const __test__ = { navigateAndWaitForMessages, chatUrlFromLocation, withOpenChat };

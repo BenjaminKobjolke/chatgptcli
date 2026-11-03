@@ -1,9 +1,17 @@
 import { spawnSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { EXIT_CODE } from '../core/errors.js';
-import { IS_COMPILED, OPENCLI_ENV, loadBrowserBridge, resolveOpenCliPaths } from '../core/opencli.js';
+import {
+  IS_COMPILED,
+  loadBrowserBridge as loadSharedBrowserBridge,
+  openCliEnvNames,
+  resolveOpenCliPaths as resolveSharedOpenCliPaths
+} from '../../.omx/reference/opencli-app-kit/src/core/opencli.js';
 import { resolveBridgeProfile } from '../core/settings.js';
+import { writeStdout } from '../../.omx/reference/opencli-app-kit/src/core/cli_shell.js';
 
+const APP_NAME = 'chatgptcli';
+const openCliEnv = openCliEnvNames(APP_NAME);
 const EXTENSION_STORE_URL = 'https://chromewebstore.google.com/detail/opencli/ildkmabpimmkaediidaifkhjpohdnifk';
 const BRIDGE_STATE = Object.freeze({ STOPPED: 'stopped', PROFILE_REQUIRED: 'profile-required' });
 const SWITCH_SESSION_STEP = '- Pick the browser profile to use: `chatgptcli switch-session`.';
@@ -12,6 +20,7 @@ let runProcess = (cmd, args, options) => spawnSync(cmd, args, options);
 let pathExists = (path) => existsSync(path);
 let isCompiled = IS_COMPILED;
 let bridgeStatus = fetchBridgeStatus;
+let resolvePaths = () => resolveSharedOpenCliPaths(APP_NAME);
 
 export function __setSetupDepsForTest(deps) {
   if (deps.runProcess) {
@@ -19,6 +28,9 @@ export function __setSetupDepsForTest(deps) {
   }
   if (deps.pathExists) {
     pathExists = deps.pathExists;
+  }
+  if (deps.resolveOpenCliPaths) {
+    resolvePaths = deps.resolveOpenCliPaths;
   }
   if (deps.bridgeStatus) {
     bridgeStatus = deps.bridgeStatus;
@@ -31,6 +43,7 @@ export function __setSetupDepsForTest(deps) {
 export function __resetSetupDepsForTest() {
   runProcess = (cmd, args, options) => spawnSync(cmd, args, options);
   pathExists = (path) => existsSync(path);
+  resolvePaths = () => resolveSharedOpenCliPaths(APP_NAME);
   isCompiled = IS_COMPILED;
   bridgeStatus = fetchBridgeStatus;
 }
@@ -48,7 +61,7 @@ export async function runSetup() {
 
   const lines = ['chatgptcli setup', '', ...checks.map((check) => `${check.ok ? '[OK]' : '[FAIL]'} ${check.message}`), ''];
   if (!isCompiled) {
-    lines.push(`Path source: ${OPENCLI_ENV.ROOT}/${OPENCLI_ENV.MAIN} env override or built-in default.`, '');
+    lines.push(`Path source: ${openCliEnv.root}/${openCliEnv.main} env override or built-in default.`, '');
   }
 
   lines.push('Actionable next steps:', ...checks.flatMap((check) => check.steps));
@@ -58,11 +71,11 @@ export async function runSetup() {
     lines.push(`- Reuse existing Chrome profile option: install the OpenCLI extension from ${EXTENSION_STORE_URL}.`);
     lines.push('- Verify end-to-end: `chatgptcli ask "hello"`.');
   } else {
-    lines.push(`- Reuse existing Chrome profile option: load unpacked extension from "${resolveOpenCliPaths().extensionPath}".`);
+    lines.push(`- Reuse existing Chrome profile option: load unpacked extension from "${resolvePaths().extensionPath}".`);
     lines.push('- Verify end-to-end: `bun run src/main.js ask "hello"`.');
   }
 
-  process.stdout.write(`${lines.join('\n')}\n`);
+  writeStdout(lines.join('\n'));
   return checks.every((check) => check.ok) ? EXIT_CODE.SUCCESS : EXIT_CODE.CONFIG;
 }
 
@@ -70,7 +83,7 @@ export async function runSetup() {
 // without Bun, and these paths resolve into its virtual filesystem.
 function sourceChecks() {
   const bunCheck = checkBun();
-  const { root, mainPath, extensionPath, browserIndexPath } = resolveOpenCliPaths();
+  const { root, mainPath, extensionPath, browserIndexPath } = resolvePaths();
   const rootExists = pathExists(root);
   const built = pathExists(mainPath) && pathExists(browserIndexPath);
 
@@ -86,7 +99,7 @@ function sourceChecks() {
       steps: rootExists
         ? []
         : [
-            `- Set ${OPENCLI_ENV.ROOT} to your local opencli checkout path.`,
+            `- Set ${openCliEnv.root} to your local opencli checkout path.`,
             '- Or place opencli at `.omx/reference/opencli` under this repo.'
           ]
     },
@@ -106,7 +119,7 @@ function sourceChecks() {
 
 async function fetchBridgeStatus() {
   const stored = resolveBridgeProfile();
-  const { getDaemonHealth } = await loadBrowserBridge();
+  const { getDaemonHealth } = await loadSharedBrowserBridge(APP_NAME);
   return { stored, health: await getDaemonHealth({ preferredContextId: stored }) };
 }
 

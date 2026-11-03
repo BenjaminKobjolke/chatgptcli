@@ -1,5 +1,6 @@
 // Argument parsers for every CLI command. Split out of cli.js to keep files under the 300-line rule.
 import { AppError, ERROR_CODE } from './core/errors.js';
+import { requireValue } from '../.omx/reference/opencli-app-kit/src/core/cli_shell.js';
 import { normalizeChatUrl } from './commands/read.js';
 import { buildPromptWithFile } from './core/prompt_file.js';
 
@@ -71,13 +72,7 @@ export function parseAskArgs(args) {
     }
 
     if (token === '-f' || token === '--format') {
-      const next = requireValue(args, i, '--format');
-      if (next !== 'json' && next !== 'text') {
-        throw new AppError(ERROR_CODE.INPUT_INVALID, `Unsupported format: ${next}`, {
-          hint: 'Supported formats: json, text.'
-        });
-      }
-      format = next;
+      format = parseFormat(args, i);
       i += 1;
       continue;
     }
@@ -134,13 +129,7 @@ export function parseReadArgs(args) {
     }
 
     if (token === '-f' || token === '--format') {
-      const next = requireValue(args, i, '--format');
-      if (next !== 'json' && next !== 'text') {
-        throw new AppError(ERROR_CODE.INPUT_INVALID, `Unsupported format: ${next}`, {
-          hint: 'Supported formats: json, text.'
-        });
-      }
-      format = next;
+      format = parseFormat(args, i);
       i += 1;
       continue;
     }
@@ -161,6 +150,16 @@ export function parseReadArgs(args) {
   }
 
   return { format, url: normalizeChatUrl(positional[0]), filesOutputDir, fileId, filesInline };
+}
+
+function parseFormat(args, index) {
+  const format = requireValue(args, index, '--format');
+  if (format !== 'json' && format !== 'text') {
+    throw new AppError(ERROR_CODE.INPUT_INVALID, `Unsupported format: ${format}`, {
+      hint: 'Supported formats: json, text.'
+    });
+  }
+  return format;
 }
 
 export function parseSwitchArgs(args) {
@@ -238,14 +237,4 @@ export function parseSetChromeArgs(args) {
   }
 
   return { executable, profileDir };
-}
-
-function requireValue(args, index, flag) {
-  const value = args[index + 1];
-  if (!value || value.startsWith('-')) {
-    throw new AppError(ERROR_CODE.INPUT_INVALID, `Missing value for ${flag}`, {
-      hint: `Provide a value after ${flag}.`
-    });
-  }
-  return value;
 }
