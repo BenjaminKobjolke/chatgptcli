@@ -4,9 +4,10 @@ Compile the CLI into a single self-contained `chatgptcli.exe` using Bun's `--com
 
 ## Local references
 
-The app keeps the OpenCLI checkout at `.omx/reference/opencli` and links the shared library at `.omx/reference/opencli-app-kit`. Create the app-kit junction from the repository root on Windows:
+The app keeps the OpenCLI checkout at `.omx/reference/opencli` and links the shared library at `.omx/reference/opencli-app-kit`. Clone the app kit, then create the junction from the repository root on Windows:
 
 ```bat
+git clone https://github.com/BenjaminKobjolke/opencli-app-kit D:\GIT\BenjaminKobjolke\opencli-app-kit
 mklink /J .omx\reference\opencli-app-kit D:\GIT\BenjaminKobjolke\opencli-app-kit
 ```
 
