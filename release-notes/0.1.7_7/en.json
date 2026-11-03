@@ -1,0 +1,9 @@
+{
+  "version": "0.1.7",
+  "build": 7,
+  "date": "2026-11-03",
+  "title": "Shared CLI plumbing",
+  "notes": [
+    "Moved internal browser and command-line plumbing into the shared app kit while preserving chatgptcli commands and output."
+  ]
+}
