@@ -1,7 +1,7 @@
 <!-- Managed by /coding-rules:apply — do not edit rule blocks by hand -->
 
 # Version
-16
+17
 
 Increase this version number whenever this rule file changes.
 
@@ -413,6 +413,44 @@ so upstream merges stay clean.
 
 ---
 
+## Coding-Rules Plugin Updates in Tickets Watcher Runs
+
+A todo may need a rules version that is published in the coding-rules marketplace but not
+installed on this machine yet (for example a new rule file). A Tickets Watcher run — a phase the
+watcher started for a todo, working from `tickets/<id>/` — may install it itself. Any other
+session asks the user to update the plugin instead.
+
+- **Precondition check.** Read `claude plugin list --json` and take the entry
+  `coding-rules@<marketplace>`. The check passes only when its `version` is at least the
+  required version and `<installPath>/rules/<required rule file>` exists. Use `installPath`;
+  never build the cache path by hand.
+- **Bounded update.** Only when the check fails, run exactly these two commands, then check
+  again:
+  1. `claude plugin marketplace update <marketplace>` (the marketplace of the plugin id, today
+     `claude-coding-rules`);
+  2. `claude plugin update coding-rules@<marketplace> --scope user --json`.
+  Nothing else: no `install`, `uninstall`, `enable` or `disable`, no other plugin or
+  marketplace, no `-y` and no `--accept-command`.
+- **Stop when it does not work.** When a command exits non-zero, asks to confirm a command, or
+  the second check still fails, stop with `OUTCOME: blocked` and
+  `BLOCKER: coding-rules <version> with <rule file> is not installed`, quoting the CLI output.
+- **Never edit machine-managed plugin files.** No agent copies files into, or edits anything
+  under, `~/.claude/plugins/` (cache, `installed_plugins.json`, marketplaces) — not in a watcher
+  run either.
+- **Published first.** The update installs only what the marketplace source holds. The rules
+  todo that adds the version must be done (its `plugin.json` version bumped, and pushed when the
+  source is a git remote). When the source lacks the version, the update cannot help: wait for
+  that todo instead.
+- **Next process.** The run that updated keeps the plugin it started with. Read the new rule
+  files from `installPath`, or let the dependent work continue in a later watcher run.
+- **Planning.** A plan run checks the installed version read-only with
+  `claude plugin list --json` and records it in the plan's context. When it is too old, the
+  plan's first ordered step is "check, update if needed, check again" as above, before any work
+  that needs the rules. It is an ordered step the implement run does, not a by-hand step.
+  Dependent work resumes only after that check passes.
+
+---
+
 ## Maximum File Length — 300 Lines
 
 Split files when they exceed 300 lines to keep code navigable during fast iteration.
@@ -654,14 +692,19 @@ Fix once per project:
    never the library's own classes.
 
 # Version
-2
+5
 
 Increase this version number whenever this rule file changes.
 
 # JavaScript Rules (Bun / Node, ESM)
 
+Thunderbird add-ons use `javascript/THUNDERBIRD_EXTENSION.md` instead of this file.
+
+Browser widgets bundled with npm + webpack use `javascript/BROWSER_WIDGET.md` instead of this file.
+
 See `COMMON_RULES.md` for rules that apply to all languages.
 See `TYPESCRIPT_RULES.md` for the TypeScript type layer on top of these conventions.
+WordPress themes and plugins: browser scripts follow `wordpress/BROWSER_JAVASCRIPT.md` instead of this file.
 
 ## Runtime & Module System
 
