@@ -48,7 +48,7 @@ As you can see, sales rose 12%.
 
 ## Shared links
 
-Pass a public `https://chatgpt.com/share/<id>` link directly; optional query strings are accepted. The available conversation is returned in the same JSON or text transcript format as an account chat, without requiring the bridge browser to be logged in. Generated sandbox files and image downloads requested with `--files-output` need the account's access token, so on a shared link they remain markers or are omitted.
+Pass a public `https://chatgpt.com/share/<id>` link directly; optional query strings are accepted. The available conversation is returned in the same JSON or text transcript format as an account chat, without requiring the bridge browser to be logged in. The share is fetched without the account's cookies, so it reads the same whether or not the bridge browser is logged in. Generated sandbox files and image downloads requested with `--files-output` need the account's access token, so on a shared link they remain markers or are omitted.
 
 If the share is deleted or no longer public, `read` reports `API_ERROR: No messages found on this shared ChatGPT link`. Open the link in a browser to check that it is still available and shared.
 
