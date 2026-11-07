@@ -1,6 +1,6 @@
 ---
 name: chatgptcli
-description: Read ChatGPT conversations and ask ChatGPT questions via the user's logged-in browser session. Use when the user says "get the chatgpt chat", "read the chatgpt conversation", "get the chat for <chatgpt.com URL or id>", "ask chatgpt <question>", "ask chatgpt about this file", or "send this to chatgpt". Drives the compiled chatgptcli.exe, which controls a local Chrome session logged into chatgpt.com.
+description: Read ChatGPT conversations and ask ChatGPT questions via the user's browser session. Use when the user says "get the chatgpt chat", "read the chatgpt conversation", "get the chat for <chatgpt.com URL or id>", "read this shared chat", "ask chatgpt <question>", "ask chatgpt about this file", or "send this to chatgpt". Drives the compiled chatgptcli.exe, which controls a local Chrome session; public shared links can be read without an account login.
 ---
 
 # chatgptcli
@@ -36,6 +36,7 @@ All commands print JSON by default; use `-f text` for plain text and relay that 
 |---|---|
 | "get / read the chatgpt chat" (current chat) | `chatgptcli.exe read -f text` |
 | "get the chat for <url or id>" | `chatgptcli.exe read <url-or-id> -f text` |
+| "read this public shared chat: <share-url>" | `chatgptcli.exe read "<share-url>" -f text` |
 | "get the deep research report" / "show the generated file" | `chatgptcli.exe read <url-or-id> -f text --files-inline` |
 | "download the images / attachments from the chat" | `chatgptcli.exe read <url-or-id> -f text --files-output "path\to\dir"` |
 | "ask chatgpt X" | `chatgptcli.exe ask "X" -f text` |
@@ -43,12 +44,14 @@ All commands print JSON by default; use `-f text` for plain text and relay that 
 
 Notes:
 - **If a transcript shows a prompt with no answer, or the answer only points at a report/canvas/file: do not report "no answer saved". Re-run the same `read` with `--files-inline`.** Deep research replies, canvases and generated documents live in the chat's "Files in chat" panel, not in the message stream, so a plain `read` shows the prompt alone.
-- `read` accepts a full `https://chatgpt.com/c/<id>` URL or the bare id.
+- `read` accepts a full `https://chatgpt.com/c/<id>` URL, a public `https://chatgpt.com/share/<id>` link (including query strings), or a bare id. Quote URLs for PowerShell.
+- A public shared link returns the available conversation in the normal transcript format and does not require a logged-in account. Generated sandbox files and image downloads with `--files-output` need the account access token, so on a shared link they remain markers or are omitted.
 - `read` returns the whole chat regardless of length, and message text is ChatGPT's markdown source (code fences, `**bold**`, tables) — relay it as markdown. Reasoning, tool calls and citation markers are left out; only the branch currently shown is included.
 - `read` never reports an empty chat: a transcript with no messages is an error on stderr, and stdout stays empty. **Do not retry it with `--files-inline`** — that flag only changes how attachments print. Act on the message instead:
   - `AUTH_MISSING: Not logged into chatgpt.com in the bridge browser` (exit 3): run `chatgptcli.exe launch`, ask the user to log in in that browser window, then retry once.
   - `API_ERROR: The bridge browser tab is not on a chat` or `API_ERROR: Chat not found for the account logged into the bridge browser` (exit 5): with a URL or id given, the bridge browser is logged into a different account than the one owning the chat, or the chat was deleted (ChatGPT redirects away from a chat it cannot open). Tell the user to open the URL in the bridge browser window and **stop** — retrying cannot help. On a bare `read` the first message just means no chat is open in the tab: ask for the chat URL.
   - `API_ERROR: No messages found in this chat` (exit 5): the cause could not be told (the tab is not on a chat, shows a CAPTCHA, or ChatGPT changed). Run `chatgptcli.exe launch`, have the user confirm the chat opens, retry once; if it still fails, tell the user the exe needs an update rather than reporting an empty conversation.
+  - `API_ERROR: No messages found on this shared ChatGPT link` (exit 5): the share may have been deleted or made private. Ask the user to open the link in a browser and confirm it is still available and shared; do not retry the CLI command.
 - A `read` takes about 15 seconds whatever the number of attachments (the chat is reloaded first). Reports and generated files appear as `[report-NN]` / `[file-NN]` entries at their place in the conversation.
 - `read` shows attachments as markers (`[image-01]`, `[report-01]`, `[file-01]`), not content. To get the actual content use `--files-inline` (report/file text in the transcript) or `--files-output <dir>` (writes every attachment to disk, images included, and turns each marker into a markdown link). `--file-id <id>` with `--files-output` downloads just one.
 - `read` reloads the chat before reading, with or without a URL argument — a stale tab hides the "Files in chat" panel and every attachment with it. An attachment it could not write is named on stderr, and `--files-output` echoes the resolved output directory as `filesOutputDir` in the JSON.
