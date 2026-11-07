@@ -54,6 +54,31 @@ describe('read public shared conversations', () => {
     expect(stdout.join('')).toBe('[user]\nquestion\n\n[assistant]\nanswer\n');
   });
 
+  test('reads a share whose answer follows hidden context, thoughts and a reasoning recap', async () => {
+    stubShare(chain([
+      message('system', [''], { metadata: { is_visually_hidden_from_conversation: true } }),
+      message('user', ['question']),
+      message('user', ['hidden context'], { metadata: { is_visually_hidden_from_conversation: true } }),
+      {
+        ...message('assistant', ['']),
+        content: { content_type: 'model_editable_context', model_set_context: '' },
+        metadata: { is_visually_hidden_from_conversation: true }
+      },
+      { ...message('assistant', ['']), content: { content_type: 'thoughts', thoughts: [] } },
+      {
+        ...message('assistant', ['']),
+        content: { content_type: 'reasoning_recap', content: 'Thought for 5s' }
+      },
+      message('assistant', ['## Heading\n\n| a | b |\n| --- | --- |\n| 1 | 2 |'])
+    ]));
+
+    const stdout = captureStdout();
+    const code = await runCli(['read', SHARE_URL, '-f', 'text']);
+
+    expect(code).toBe(0);
+    expect(stdout.join('')).toBe('[user]\nquestion\n\n[assistant]\n## Heading\n\n| a | b |\n| --- | --- |\n| 1 | 2 |\n');
+  });
+
   test('returns JSON transcript and preserves a query-string share URL', async () => {
     stubShare(chain([message('user', ['question']), message('assistant', ['answer'])]));
 
@@ -160,15 +185,18 @@ describe('conversationFetchScript', () => {
 
   test('fetches public share data without requesting the account session', async () => {
     const urls = [];
+    const fetchOptions = [];
     globalThis.location = { pathname: '/share/abc-123', href: SHARE_URL };
-    globalThis.fetch = async (url) => {
+    globalThis.fetch = async (url, options) => {
       urls.push(url);
+      fetchOptions.push(options);
       return { status: 200, text: async () => JSON.stringify(chain([message('user', ['hi'])])) };
     };
 
     const result = await (0, eval)(conversationHelpers.conversationFetchScript());
 
     expect(urls).toEqual(['/backend-api/share/abc-123']);
+    expect(fetchOptions).toEqual([{ credentials: 'omit' }]);
     expect(result).toMatchObject({ shared: true, offChat: false, authHeader: '', status: 200 });
   });
 
