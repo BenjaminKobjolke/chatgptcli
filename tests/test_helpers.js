@@ -5,6 +5,28 @@
 
 export { fakeReadPage } from '../.omx/reference/opencli-app-kit/src/testing/test_helpers.js';
 
+export function message(role, parts, extra = {}) {
+  return {
+    author: { role },
+    recipient: 'all',
+    content: { content_type: parts.every((part) => typeof part === 'string') ? 'text' : 'multimodal_text', parts },
+    metadata: {},
+    ...extra
+  };
+}
+
+// A linear chat: each message is the child of the one before it.
+export function chain(messages) {
+  const mapping = { root: { parent: null, message: null } };
+  let parent = 'root';
+  messages.forEach((entry, index) => {
+    const id = `node-${index}`;
+    mapping[id] = { parent, message: entry };
+    parent = id;
+  });
+  return { current_node: parent, mapping };
+}
+
 // Drives resolveReportFiles' Files-in-chat flow: the "More" menu, the
 // "View files in chat" panel, per-file click + network-capture discovery,
 // and the two-hop in-page fetch. `evaluateResult` is what the initial
@@ -74,7 +96,17 @@ export function fakeFilesPanelExtras(
 // tab whose location is not a chat URL.
 export function fakeConversationExtras(
   conversation,
-  { status = 200, loggedOut = false, offChat = false, dataUrl = '', requests = [], sandboxFiles = {} } = {}
+  {
+    status = 200,
+    loggedOut = false,
+    offChat = false,
+    shared = false,
+    redirectedHome = false,
+    url = shared ? 'https://chatgpt.com/share/abc-123' : 'https://chatgpt.com/c/abc',
+    dataUrl = '',
+    requests = [],
+    sandboxFiles = {}
+  } = {}
 ) {
   const evaluate = async (script) => {
     if (script.includes('/interpreter/download')) {
@@ -85,11 +117,25 @@ export function fakeConversationExtras(
       const path = Object.keys(sandboxFiles).find((entry) => script.includes(`sandbox=${encodeURIComponent(entry)}`));
       return path ? { type: 'text', text: sandboxFiles[path] } : null;
     }
-    if (script.includes('/backend-api/conversation/')) {
-      if (loggedOut || offChat) {
-        return { url: 'https://chatgpt.com/', status: 0, loggedOut, offChat, authHeader: '', body: '' };
+    if (shared && script.includes('/backend-api/share/')) {
+      if (redirectedHome) {
+        return { url: 'https://chatgpt.com/', status: 0, loggedOut: false, offChat: true, shared: false, authHeader: '', body: '' };
       }
-      return { url: 'https://chatgpt.com/c/abc', status, authHeader: 'Bearer token', body: JSON.stringify(conversation) };
+      return {
+        url,
+        status,
+        loggedOut: false,
+        offChat: false,
+        shared: true,
+        authHeader: '',
+        body: JSON.stringify(conversation)
+      };
+    }
+    if (!shared && script.includes('/backend-api/conversation/')) {
+      if (loggedOut || offChat) {
+        return { url: 'https://chatgpt.com/', status: 0, loggedOut, offChat, shared: false, authHeader: '', body: '' };
+      }
+      return { url, status, shared: false, authHeader: 'Bearer token', body: JSON.stringify(conversation) };
     }
     const download = script.match(/\/backend-api\/files\/download\/(file[-_][A-Za-z0-9]+)/);
     if (download) {

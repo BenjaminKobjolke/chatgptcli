@@ -9,8 +9,10 @@ import {
   bindOriginalStdio,
   captureStderr,
   captureStdout,
+  chain,
   fakeConversationExtras,
   fakeReadPage,
+  message,
   restoreStdio
 } from './test_helpers.js';
 
@@ -32,30 +34,8 @@ afterEach(() => {
   rmSync(outputDir, { recursive: true, force: true });
 });
 
-function message(role, parts, extra = {}) {
-  return {
-    author: { role },
-    recipient: 'all',
-    content: { content_type: parts.every((part) => typeof part === 'string') ? 'text' : 'multimodal_text', parts },
-    metadata: {},
-    ...extra
-  };
-}
-
 function imagePart(fileId) {
   return { content_type: 'image_asset_pointer', asset_pointer: `sediment://${fileId}` };
-}
-
-// A linear chat: each message is the child of the one before it.
-function chain(messages) {
-  const mapping = { root: { parent: null, message: null } };
-  let parent = 'root';
-  messages.forEach((entry, index) => {
-    const id = `node-${index}`;
-    mapping[id] = { parent, message: entry };
-    parent = id;
-  });
-  return { current_node: parent, mapping };
 }
 
 function stubConversation(conversation, options) {

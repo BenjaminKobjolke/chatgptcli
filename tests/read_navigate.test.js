@@ -68,6 +68,10 @@ describe('chatUrlFromLocation', () => {
     expect(readHelpers.chatUrlFromLocation('https://chat.openai.com/c/abc123')).toBe('https://chat.openai.com/c/abc123');
   });
 
+  test('accepts a public share URL from the open tab', () => {
+    expect(readHelpers.chatUrlFromLocation('https://chatgpt.com/share/abc')).toBe('https://chatgpt.com/share/abc');
+  });
+
   // A chat inside a project lives under the project's path, not at the root.
   test('accepts a chat inside a project', () => {
     const url = 'https://chatgpt.com/g/g-p-123-name/c/abc123';
@@ -81,5 +85,16 @@ describe('chatUrlFromLocation', () => {
     expect(readHelpers.chatUrlFromLocation('https://example.com/c/abc123')).toBeNull();
     expect(readHelpers.chatUrlFromLocation('')).toBeNull();
     expect(readHelpers.chatUrlFromLocation(null)).toBeNull();
+  });
+});
+
+describe('normalizeChatUrl', () => {
+  test('preserves a public share URL and its query string', () => {
+    const url = 'https://chatgpt.com/share/abc?ogimg=plain';
+    expect(readHelpers.normalizeChatUrl(url)).toBe(url);
+  });
+
+  test('continues normalizing a bare id to an account chat URL', () => {
+    expect(readHelpers.normalizeChatUrl('abc123')).toBe('https://chatgpt.com/c/abc123');
   });
 });
