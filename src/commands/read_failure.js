@@ -4,11 +4,12 @@
 import { ERROR_CODE } from '../core/errors.js';
 
 const STATUS_NOT_FOUND = 404;
-const FETCH_FAILURE = Object.freeze({
+export const FETCH_FAILURE = Object.freeze({
   NONE: '',
   LOGGED_OUT: 'logged-out',
   OFF_CHAT: 'off-chat',
-  NOT_FOUND: 'not-found'
+  NOT_FOUND: 'not-found',
+  SHARE_UNREADABLE: 'share-unreadable'
 });
 
 // What read.js throws for a transcript without messages, keyed by cause.
@@ -35,6 +36,11 @@ export const EMPTY_TRANSCRIPT_ERROR = Object.freeze({
     message: 'Chat not found for the account logged into the bridge browser',
     hint: 'Open the chat URL in the bridge browser window: it is logged into a different account, or the chat was deleted.'
   },
+  [FETCH_FAILURE.SHARE_UNREADABLE]: {
+    code: ERROR_CODE.API_ERROR,
+    message: 'No messages found on this shared ChatGPT link',
+    hint: 'Open the shared link in a browser to check that it is still available and shared.'
+  },
   [FETCH_FAILURE.NONE]: {
     code: ERROR_CODE.API_ERROR,
     message: 'No messages found in this chat',
@@ -48,6 +54,7 @@ export const EMPTY_TRANSCRIPT_ERROR = Object.freeze({
 // threw (a challenge page, no network) reports nothing: `NONE`.
 export function conversationFetchFailure(value) {
   const object = value && typeof value === 'object' ? value : {};
+  if (object.shared) return FETCH_FAILURE.SHARE_UNREADABLE;
   if (object.loggedOut) return FETCH_FAILURE.LOGGED_OUT;
   if (object.offChat) return FETCH_FAILURE.OFF_CHAT;
   if (object.status === STATUS_NOT_FOUND) return FETCH_FAILURE.NOT_FOUND;

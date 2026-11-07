@@ -190,7 +190,10 @@ ${body}
 
 export function readScrapeScript(imageIdOffset) {
   return inPageScript(imageIdOffset, `
-  const MESSAGE_ATTR = 'data-message-author-role';
+  // Public shares use a different role attribute than account conversations.
+  const MESSAGE_ATTR = document.querySelector('[data-message-author-role]')
+    ? 'data-message-author-role'
+    : 'data-message-role';
   const TURN_SELECTOR = '[data-testid^="conversation-turn"]';
   const REPORT_CLASS_PART = '_reportPage_';
   const REPORT_FRAME_TITLE = 'internal://deep-research';

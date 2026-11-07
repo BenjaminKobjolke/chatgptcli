@@ -8,7 +8,7 @@
 //
 // The endpoints are OpenAI-private and undocumented. When they stop answering,
 // `readConversation` returns `null` and read.js falls back to the DOM scrape.
-import { CHAT_PATH_MARKER } from '../core/chatgpt_site.js';
+import { CHAT_PATH_MARKER, SHARE_PATH_MARKER } from '../core/chatgpt_site.js';
 import {
   ATTACHMENT_KIND,
   FILE_DOWNLOAD_URL_PART,
@@ -24,6 +24,7 @@ import { safeJsonParse } from '../../.omx/reference/opencli-app-kit/src/core/pag
 
 const SESSION_URL = '/api/auth/session';
 const CONVERSATION_URL = '/backend-api/conversation/';
+const SHARE_URL = '/backend-api/share/';
 const STATUS_OK = 200;
 const ROLE = Object.freeze({ USER: 'user', ASSISTANT: 'assistant', TOOL: 'tool' });
 const VISIBLE_CONTENT_TYPES = Object.freeze(['text', 'multimodal_text']);
@@ -40,12 +41,24 @@ const FIRST_HEADING_PATTERN = /^#\s+(.+)$/m;
 
 // Kept thin: it only moves bytes out of the page. Everything that interprets
 // them runs in Node, where it can be tested. The chat id comes from the tab's
-// own location so a bare `read` (no URL argument) works the same way.
+// own location so a bare `read` (no URL argument) works the same way. Public
+// share links use their unauthenticated endpoint instead of the account API.
 function conversationFetchScript() {
   return `(async () => {
-    const chatId = location.pathname.split(${JSON.stringify(CHAT_PATH_MARKER)}).pop().split('/')[0];
-    const result = { url: location.href, status: 0, loggedOut: false, offChat: !chatId, authHeader: '', body: '' };
+    const chatId = location.pathname.includes(${JSON.stringify(CHAT_PATH_MARKER)})
+      ? location.pathname.split(${JSON.stringify(CHAT_PATH_MARKER)}).pop().split('/')[0]
+      : '';
+    const shareId = location.pathname.includes(${JSON.stringify(SHARE_PATH_MARKER)})
+      ? location.pathname.split(${JSON.stringify(SHARE_PATH_MARKER)}).pop().split('/')[0]
+      : '';
+    const result = { url: location.href, status: 0, loggedOut: false, offChat: !chatId && !shareId, shared: Boolean(shareId), authHeader: '', body: '' };
     try {
+      if (shareId) {
+        const response = await fetch(${JSON.stringify(SHARE_URL)} + shareId, { credentials: 'include' });
+        result.status = response.status;
+        result.body = await response.text();
+        return result;
+      }
       const session = await fetch(${JSON.stringify(SESSION_URL)}, { credentials: 'include' }).then((response) => response.json());
       // Set only once the session answered: a fetch that throws (a challenge
       // page, no network) must not read as "logged out".
@@ -245,4 +258,4 @@ export async function resolveImagePointers({ page, messages, authHeader, fileId 
   }
 }
 
-export const __test__ = { conversationMessages, normalizeConversationFetch };
+export const __test__ = { conversationFetchScript, conversationMessages, normalizeConversationFetch };

@@ -1,11 +1,11 @@
 import { mkdirSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { CHATGPT_ROOT_URL, CHAT_PATH_MARKER, isChatHost } from '../core/chatgpt_site.js';
+import { CHATGPT_ROOT_URL, CHAT_PATH_MARKER, SHARE_PATH_MARKER, isChatHost, isSharePath } from '../core/chatgpt_site.js';
 import { AppError, ERROR_CODE, EXIT_CODE } from '../core/errors.js';
 import { withSitePage } from '../../.omx/reference/opencli-app-kit/src/core/session.js';
 import { resolveBridgeProfile } from '../core/settings.js';
 import { readConversation, resolveImagePointers, resolvePendingAttachments } from './read_conversation.js';
-import { EMPTY_TRANSCRIPT_ERROR } from './read_failure.js';
+import { EMPTY_TRANSCRIPT_ERROR, FETCH_FAILURE } from './read_failure.js';
 import { readScrapeScript, reportFrameScript } from './read_scrape.js';
 import { resolveReportFiles } from './read_files_panel.js';
 import {
@@ -18,8 +18,9 @@ import {
 
 // Turn containers, not role nodes: an image-only assistant reply has no role
 // node, so counting role nodes underreports how much of the chat has mounted.
-// `[data-turn-key]` is the redesigned markup's turn; the first two are older.
-const TURN_SELECTOR = '[data-turn-key], [data-testid^="conversation-turn"], [data-message-author-role]';
+// `[data-turn-key]` is the redesigned markup's turn; public shares expose each
+// transcript item directly as `[data-message-role]`.
+const TURN_SELECTOR = '[data-turn-key], [data-testid^="conversation-turn"], [data-message-author-role], [data-message-role]';
 
 // Location test for a bare `read` (no URL argument). Deliberately NOT
 // `normalizeChatUrl`: that one normalizes *user input*, so it coerces any
@@ -34,7 +35,10 @@ function chatUrlFromLocation(href) {
   } catch {
     return null;
   }
-  return isChatHost(url.hostname) && url.pathname.includes(CHAT_PATH_MARKER) ? url.href : null;
+  return isChatHost(url.hostname)
+    && (url.pathname.includes(CHAT_PATH_MARKER) || url.pathname.includes(SHARE_PATH_MARKER))
+    ? url.href
+    : null;
 }
 
 let openChatImpl = null;
@@ -138,7 +142,7 @@ export function normalizeChatUrl(target) {
 
   if (!isChatHost(url.hostname)) {
     throw new AppError(ERROR_CODE.INPUT_INVALID, `Not a ChatGPT URL: ${target}`, {
-      hint: 'Use a https://chatgpt.com/c/... URL or a bare chat id.'
+      hint: 'Use a https://chatgpt.com/c/... URL, a https://chatgpt.com/share/... URL, or a bare chat id.'
     });
   }
 
@@ -172,7 +176,8 @@ async function withOpenChat(input, fn) {
   if (openChatImpl) {
     const { bridge, page } = await openChatImpl(input);
     try {
-      return await fn(page);
+      const url = input.url || chatUrlFromLocation(await page.evaluate('window.location.href').catch(() => ''));
+      return await fn(page, url);
     } finally {
       await bridge.close().catch(() => {});
     }
@@ -187,7 +192,7 @@ async function withOpenChat(input, fn) {
     // Without an argument the already open chat is the target, but still hard-reload it.
     const url = input.url || chatUrlFromLocation(await page.evaluate('window.location.href').catch(() => ''));
     if (url) await navigateAndWaitForMessages(page, url);
-    return fn(page);
+    return fn(page, url);
   });
 }
 
@@ -202,7 +207,7 @@ export async function runSwitch(input) {
 }
 
 export async function runRead(input) {
-  return withOpenChat(input, async (page) => {
+  return withOpenChat(input, async (page, targetUrl) => {
     // The backend JSON is complete; the DOM only holds the turns currently
     // mounted, so it is the fallback for when that endpoint stops answering.
     const conversation = await readConversation(page);
@@ -243,7 +248,8 @@ export async function runRead(input) {
       .filter((message) => message.text || message.attachments?.length);
 
     if (!messages.length) {
-      const { code, message, hint } = EMPTY_TRANSCRIPT_ERROR[conversation.failure];
+      const failure = isSharePath(targetUrl) ? FETCH_FAILURE.SHARE_UNREADABLE : conversation.failure;
+      const { code, message, hint } = EMPTY_TRANSCRIPT_ERROR[failure];
       throw new AppError(code, message, { hint });
     }
 
@@ -269,4 +275,4 @@ export async function runRead(input) {
   });
 }
 
-export const __test__ = { navigateAndWaitForMessages, chatUrlFromLocation, withOpenChat };
+export const __test__ = { navigateAndWaitForMessages, chatUrlFromLocation, normalizeChatUrl, withOpenChat };
