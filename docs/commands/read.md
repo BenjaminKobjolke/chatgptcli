@@ -8,13 +8,13 @@ chatgptcli read [chat-url-or-id] [--files-output <dir>] [--file-id <id>] [--file
 
 Without an argument, reads the chat currently open in the browser tab. With a URL or bare chat id, navigates there first (like [`switch`](switch.md)) and then reads. Either way the chat is hard-reloaded first — a stale tab hides the "Files in chat" panel, and with it every generated file and report.
 
-Messages come from the chat's backend conversation JSON, fetched inside the logged-in tab — not from the rendered page. ChatGPT only keeps the few turns near the viewport mounted, so the page cannot supply a complete transcript; the JSON always can. Message text is therefore ChatGPT's own markdown source (code fences, `**bold**`, tables), not the rendered text.
+For account chats, messages come from the backend conversation JSON fetched inside the logged-in tab — not from the rendered page. For public shared links, `read` uses the public share data and does not require an account login. Message text is ChatGPT's own markdown source (code fences, `**bold**`, tables), not the rendered text.
 
 ## Options
 
 | Option | Default | Description |
 |---|---|---|
-| `[chat-url-or-id]` | current tab | Chat to read: `https://chatgpt.com/c/<id>` or bare id |
+| `[chat-url-or-id]` | current tab | Chat to read: an account URL (`https://chatgpt.com/c/<id>`), public share URL (`https://chatgpt.com/share/<id>`), or bare id |
 | `--files-output <dir>` | off | Download every attachment into `<dir>` (created if missing) |
 | `--file-id <id>` | all | With `--files-output`, download only this attachment (e.g. `image-02`) |
 | `--files-inline` | off | Print report and generated-file bodies inline instead of a marker |
@@ -45,6 +45,12 @@ As you can see, sales rose 12%.
 ```
 
 `--files-inline` restores the pre-marker behavior for text attachments: Deep Research reports and generated files print their full body. It combines with `--files-output` (inline the text *and* write the file).
+
+## Shared links
+
+Pass a public `https://chatgpt.com/share/<id>` link directly; optional query strings are accepted. The available conversation is returned in the same JSON or text transcript format as an account chat, without requiring the bridge browser to be logged in. Generated sandbox files and image downloads requested with `--files-output` need the account's access token, so on a shared link they remain markers or are omitted.
+
+If the share is deleted or no longer public, `read` reports `API_ERROR: No messages found on this shared ChatGPT link`. Open the link in a browser to check that it is still available and shared.
 
 ## Output
 

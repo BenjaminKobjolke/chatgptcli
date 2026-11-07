@@ -49,7 +49,7 @@ Install the skill as a plugin (no clone, no build). This repo is also its own pl
 /plugin install chatgptcli@chatgptcli
 ```
 
-Then say things like "ask chatgpt what is 2+2", "get the chatgpt chat", or "get the chat for https://chatgpt.com/c/<id>". On first use the skill downloads `chatgptcli.exe` from the latest GitHub release to `~/.chatgptcli/bin/`. Plugin source lives in [`plugin/`](plugin/).
+Then say things like "ask chatgpt what is 2+2", "get the chatgpt chat", "get the chat for https://chatgpt.com/c/<id>", or "read this shared chat: https://chatgpt.com/share/<id>". `read` accepts both account chat URLs and public share links. On first use the skill downloads `chatgptcli.exe` from the latest GitHub release to `~/.chatgptcli/bin/`. Plugin source lives in [`plugin/`](plugin/).
 
 To update the plugin to the latest version (also as `/plugin ...` slash commands in a session):
 
