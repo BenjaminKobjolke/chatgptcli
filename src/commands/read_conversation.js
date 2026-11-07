@@ -1,5 +1,5 @@
-// Primary message source for `read`: the chat's own backend conversation JSON,
-// fetched in-page with the session's bearer token.
+// Primary message source for `read`: conversation JSON fetched in-page from
+// ChatGPT's backend, using the account or public-share endpoint as appropriate.
 //
 // The DOM cannot serve this any more. ChatGPT virtualizes the chat list — only
 // the handful of turns near the viewport are mounted, older ones load on scroll
@@ -54,7 +54,8 @@ function conversationFetchScript() {
     const result = { url: location.href, status: 0, loggedOut: false, offChat: !chatId && !shareId, shared: Boolean(shareId), authHeader: '', body: '' };
     try {
       if (shareId) {
-        const response = await fetch(${JSON.stringify(SHARE_URL)} + shareId, { credentials: 'include' });
+        // A logged-in tab's cookies make the public share endpoint answer 401.
+        const response = await fetch(${JSON.stringify(SHARE_URL)} + shareId, { credentials: 'omit' });
         result.status = response.status;
         result.body = await response.text();
         return result;
