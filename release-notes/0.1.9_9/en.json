@@ -1,0 +1,9 @@
+{
+  "version": "0.1.9",
+  "build": 9,
+  "date": "2026-11-07",
+  "title": "Read public share links in a logged-in browser",
+  "notes": [
+    "The share fetch no longer sends account cookies, which made ChatGPT answer 401 and read report \"No messages found on this shared ChatGPT link\"."
+  ]
+}
