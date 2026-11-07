@@ -1,0 +1,11 @@
+{
+  "version": "0.1.8",
+  "build": 8,
+  "date": "2026-11-07",
+  "title": "Read public share links",
+  "notes": [
+    "Read public ChatGPT share links with the read command, including links with query strings, without requiring the owning account to be signed in.",
+    "Unavailable or private shared links now return a clear shared-link error.",
+    "Update chatgptcli.exe to version 0.1.8 to read public share links."
+  ]
+}
