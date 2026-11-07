@@ -84,11 +84,20 @@ describe('cli', () => {
     return async () => ({ stored, health: { state, status: state === 'stopped' ? null : { profiles } } });
   }
 
+  function bridgeStatusSequence(...statuses) {
+    let index = 0;
+    return async () => statuses[Math.min(index++, statuses.length - 1)];
+  }
+
   test('setup checks prerequisites and prints guidance', async () => {
     __setSetupDepsForTest({
       runProcess: () => ({ status: 0, stdout: '1.3.5' }),
       pathExists: () => true,
-      bridgeStatus: bridgeStatus('stopped', [])
+      bridgeStatus: bridgeStatusSequence(
+        { stored: '', health: { state: 'stopped', status: null } },
+        { stored: '', health: { state: 'ready', status: { profiles: [{ contextId: 'abc', extensionConnected: true }] } } }
+      ),
+      startBridge: async () => {}
     });
 
     const stdout = captureStdout();
@@ -97,6 +106,70 @@ describe('cli', () => {
     expect(code).toBe(0);
     expect(stdout.join('')).toContain('[OK] Bun available (1.3.5)');
     expect(stdout.join('')).toContain('chatgptcli launch');
+  });
+
+  test('setup starts a stopped bridge and reports its connected profile', async () => {
+    const startCalls = [];
+    __setSetupDepsForTest({
+      isCompiled: true,
+      bridgeStatus: bridgeStatusSequence(
+        { stored: 'abc', health: { state: 'stopped', status: null } },
+        { stored: 'abc', health: { state: 'ready', status: { profiles: [{ contextId: 'abc', extensionConnected: true }] } } }
+      ),
+      startBridge: async (stored) => startCalls.push(stored)
+    });
+
+    const stdout = captureStdout();
+    const code = await runCli(['setup']);
+
+    expect(code).toBe(0);
+    expect(stdout.join('')).toContain('[OK] Browser Bridge connected: abc');
+    expect(startCalls).toEqual(['abc']);
+  });
+
+  test('setup reports a missing extension after starting a stopped bridge', async () => {
+    __setSetupDepsForTest({
+      isCompiled: true,
+      bridgeStatus: bridgeStatusSequence(
+        { stored: '', health: { state: 'stopped', status: null } },
+        { stored: '', health: { state: 'no-extension', status: { profiles: [] } } }
+      ),
+      startBridge: async () => {}
+    });
+
+    const stdout = captureStdout();
+    const code = await runCli(['setup']);
+
+    expect(code).toBe(6);
+    expect(stdout.join('')).toContain('[FAIL] Browser Bridge: no browser profile connected');
+  });
+
+  test('setup reports when the stopped bridge could not be started', async () => {
+    __setSetupDepsForTest({
+      isCompiled: true,
+      bridgeStatus: bridgeStatus('stopped', []),
+      startBridge: async () => { throw new Error('bridge start failed'); }
+    });
+
+    const stdout = captureStdout();
+    const code = await runCli(['setup']);
+
+    expect(code).toBe(6);
+    expect(stdout.join('')).toContain('[FAIL] Browser Bridge daemon could not be started');
+  });
+
+  test('setup does not start a bridge that is already ready', async () => {
+    let startCalls = 0;
+    __setSetupDepsForTest({
+      isCompiled: true,
+      bridgeStatus: bridgeStatus('ready', ['abc']),
+      startBridge: async () => { startCalls += 1; }
+    });
+
+    const code = await runCli(['setup']);
+
+    expect(code).toBe(0);
+    expect(startCalls).toBe(0);
   });
 
   // The compiled exe bundles the bridge and needs no Bun: the on-disk checks

@@ -3,6 +3,7 @@ import { existsSync } from 'node:fs';
 import { EXIT_CODE } from '../core/errors.js';
 import {
   IS_COMPILED,
+  connectBridge,
   loadBrowserBridge as loadSharedBrowserBridge,
   openCliEnvNames,
   resolveOpenCliPaths as resolveSharedOpenCliPaths
@@ -20,6 +21,7 @@ let runProcess = (cmd, args, options) => spawnSync(cmd, args, options);
 let pathExists = (path) => existsSync(path);
 let isCompiled = IS_COMPILED;
 let bridgeStatus = fetchBridgeStatus;
+let startBridge = startBridgeDaemon;
 let resolvePaths = () => resolveSharedOpenCliPaths(APP_NAME);
 
 export function __setSetupDepsForTest(deps) {
@@ -35,6 +37,9 @@ export function __setSetupDepsForTest(deps) {
   if (deps.bridgeStatus) {
     bridgeStatus = deps.bridgeStatus;
   }
+  if (deps.startBridge) {
+    startBridge = deps.startBridge;
+  }
   if ('isCompiled' in deps) {
     isCompiled = deps.isCompiled;
   }
@@ -46,6 +51,7 @@ export function __resetSetupDepsForTest() {
   resolvePaths = () => resolveSharedOpenCliPaths(APP_NAME);
   isCompiled = IS_COMPILED;
   bridgeStatus = fetchBridgeStatus;
+  startBridge = startBridgeDaemon;
 }
 
 // Every check is `{ ok, message, steps }`: one [OK]/[FAIL] line plus the next
@@ -123,6 +129,22 @@ async function fetchBridgeStatus() {
   return { stored, health: await getDaemonHealth({ preferredContextId: stored }) };
 }
 
+async function startBridgeDaemon(stored) {
+  const { BrowserBridge } = await loadSharedBrowserBridge(APP_NAME);
+  const bridge = new BrowserBridge();
+  try {
+    await connectBridge(bridge, {
+      appName: APP_NAME,
+      session: 'site:chatgpt',
+      timeout: 30,
+      preferredContextId: stored || undefined
+    });
+  } finally {
+    // The daemon is persistent; closing only drops the page reference.
+    await bridge.close().catch(() => {});
+  }
+}
+
 // Boundary normalizer for the daemon's health report; an unreachable daemon
 // and a failed lookup both read as "stopped".
 function normalizeBridgeStatus(value) {
@@ -136,11 +158,18 @@ function normalizeBridgeStatus(value) {
 }
 
 async function bridgeCheck() {
-  const { stored, state, connected } = normalizeBridgeStatus(await bridgeStatus().catch(() => null));
+  let { stored, state, connected } = normalizeBridgeStatus(await bridgeStatus().catch(() => null));
 
-  // Not a failure: the daemon is started by the first command that needs it.
   if (state === BRIDGE_STATE.STOPPED) {
-    return { ok: true, message: 'Browser Bridge daemon not running yet (it starts with the first ask or read)', steps: [] };
+    await startBridge(stored).catch(() => {});
+    ({ stored, state, connected } = normalizeBridgeStatus(await bridgeStatus().catch(() => null)));
+  }
+  if (state === BRIDGE_STATE.STOPPED) {
+    return {
+      ok: false,
+      message: 'Browser Bridge daemon could not be started',
+      steps: ['- Retry `chatgptcli setup`; if it keeps failing, make sure no other program uses the bridge port and the exe is not blocked.']
+    };
   }
   if (!connected.length) {
     return {

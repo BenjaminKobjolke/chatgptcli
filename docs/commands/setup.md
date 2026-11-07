@@ -1,6 +1,6 @@
 # setup
 
-Preflight check. Validates local prerequisites and the Browser Bridge connection, and prints next steps. Changes nothing.
+Preflight check. Validates local prerequisites and the Browser Bridge connection, and prints next steps.
 
 ```bash
 chatgptcli setup
@@ -23,13 +23,15 @@ The compiled exe bundles the bridge and needs no Bun, so it prints one
 
 Both then ask the bridge daemon which browser profiles are connected (skipped
 from source while an on-disk check fails, since loading the bridge would
-bootstrap opencli):
+bootstrap opencli). When stopped, setup starts the bridge, which keeps running
+in the background as it does after `read`, and waits up to 30 seconds for the
+extension to connect:
 
 | Line | Meaning |
 |---|---|
 | `[OK] Browser Bridge connected: <profile>` | Ready. |
 | `[OK] Browser Bridge connected: <profile> (stored default <old> is not connected)` | Works — the daemon fell back to the only connected profile — but the pick stored by `switch-session` is stale. Run `chatgptcli switch-session`. |
-| `[OK] Browser Bridge daemon not running yet (...)` | Not a failure: the daemon starts with the first `ask` or `read`. |
+| `[FAIL] Browser Bridge daemon could not be started` | Retry `chatgptcli setup`; if it keeps failing, make sure no other program uses the bridge port and the exe is not blocked. |
 | `[FAIL] Browser Bridge: no browser profile connected` | Chrome is not running, or the OpenCLI extension is missing or disabled. |
 | `[FAIL] Browser Bridge: several profiles connected (...), none selected` | Run `chatgptcli switch-session`. |
 
