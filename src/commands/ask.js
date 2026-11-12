@@ -81,16 +81,18 @@ export async function runAsk(input) {
 }
 
 async function runBrowserAsk(input) {
+  const profile = resolveBridgeProfile();
   return withSitePageImpl({
     appName: 'chatgptcli',
     session: 'site:chatgpt',
     timeout: Math.max(30, input.timeoutSeconds),
-    preferredContextId: resolveBridgeProfile()
+    preferredContextId: profile || undefined
   }, async (page) => {
     return askOnPage(page, {
       prompt: input.prompt,
       timeoutMs: input.timeoutSeconds * 1000,
-      newChat: input.newChat
+      newChat: input.newChat,
+      profile
     });
   });
 }

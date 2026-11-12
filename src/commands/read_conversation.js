@@ -8,7 +8,7 @@
 //
 // The endpoints are OpenAI-private and undocumented. When they stop answering,
 // `readConversation` returns `null` and read.js falls back to the DOM scrape.
-import { CHAT_PATH_MARKER, SHARE_PATH_MARKER } from '../core/chatgpt_site.js';
+import { CHAT_PATH_MARKER, SESSION_URL, SHARE_PATH_MARKER } from '../core/chatgpt_site.js';
 import {
   ATTACHMENT_KIND,
   FILE_DOWNLOAD_URL_PART,
@@ -22,7 +22,6 @@ import { attachmentEntry, fetchAttachedFileEntry, normalizeReportFileJson } from
 import { conversationFetchFailure } from './read_failure.js';
 import { safeJsonParse } from '../../.omx/reference/opencli-app-kit/src/core/page_fetch.js';
 
-const SESSION_URL = '/api/auth/session';
 const CONVERSATION_URL = '/backend-api/conversation/';
 const SHARE_URL = '/backend-api/share/';
 const STATUS_OK = 200;

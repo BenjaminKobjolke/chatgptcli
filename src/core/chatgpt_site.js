@@ -1,5 +1,6 @@
 // Which web addresses are ChatGPT: the one place the supported hosts are named.
 export const CHATGPT_ROOT_URL = 'https://chatgpt.com/';
+export const SESSION_URL = '/api/auth/session';
 // A chat's path is `/c/<id>`, or `/g/<project>/c/<id>` inside a project.
 export const CHAT_PATH_MARKER = '/c/';
 // Public share URLs are not owned by the account currently signed in.

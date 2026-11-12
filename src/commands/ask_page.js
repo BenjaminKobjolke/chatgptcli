@@ -1,12 +1,16 @@
 // The in-page half of `ask`: everything that drives or reads the chatgpt.com tab.
 // Retry policy and output rendering live in ask.js.
 import { CHATGPT_ROOT_URL, isChatHost } from '../core/chatgpt_site.js';
+import {
+  EDITOR_SELECTOR,
+  SEND_SELECTOR,
+  STOP_SELECTOR,
+  USER_SELECTOR,
+  probeChatGptSurface,
+  normalizeSurfaceState,
+  summarizeSurfaceIssue
+} from './chatgpt_surface.js';
 
-const EDITOR_SELECTOR = '.ProseMirror[role="textbox"]';
-// Each selector lists the older testid markup first, then the redesigned one.
-const SEND_SELECTOR = '[data-testid="send-button"], form button[type="submit"]';
-// Confirmed live mid-stream: the redesigned stop button is a `type="button"` with `aria-label="Stop"` and no testid.
-const STOP_SELECTOR ='[data-testid="stop-button"], form button[aria-label^="Stop"]';
 const ASSISTANT_SELECTOR = '[data-message-author-role="assistant"], [data-content-search-unit-key$=":assistant"] [data-chatgpt-selection-message-id]';
 // In-page: every mounted assistant reply as { key, text }, keyed by message id so it survives a re-mount.
 const ASSISTANTS_EXPRESSION = `Array.from(document.querySelectorAll(${JSON.stringify(ASSISTANT_SELECTOR)}))
@@ -15,27 +19,11 @@ const ASSISTANTS_EXPRESSION = `Array.from(document.querySelectorAll(${JSON.strin
     return { key: node.getAttribute('data-chatgpt-selection-message-id') || node.getAttribute('data-message-id') || text, text };
   })
   .filter((entry) => entry.text)`;
-const RETRYABLE_PREFIXES = ['[BLOCKED]', '[NO RESPONSE]', '[SEND FAILED]'];
+const RETRYABLE_PREFIXES = ['[BLOCKED]', '[NO RESPONSE]', '[SEND FAILED]', '[SUBMIT FAILED]'];
 const BLOCKED_PREFIX = '[BLOCKED]';
 const NO_RESPONSE_PREFIX = '[NO RESPONSE]';
 const SEND_FAILED_PREFIX = '[SEND FAILED]';
-const LOGIN_HINTS = [
-  'log in',
-  'login',
-  'sign in',
-  'continue with google',
-  '登录',
-  '登入'
-];
-const CHALLENGE_HINTS = [
-  'captcha',
-  'verify you are human',
-  'human verification',
-  'access denied',
-  'one more step',
-  '请先验证',
-  '人机验证'
-];
+const SUBMIT_FAILED_PREFIX = '[SUBMIT FAILED]';
 export async function askOnPage(page, input) {
   let surface = await ensureReadySurface(page, input.newChat);
   if (!surface.editorReady || surface.loginLike || surface.challengeLike) {
@@ -45,6 +33,12 @@ export async function askOnPage(page, input) {
   const baselineKeys = new Set(normalizeAssistants(await page.evaluate(ASSISTANTS_EXPRESSION)).map((entry) => entry.key));
   const sendResult = await injectAndSend(page, input.prompt);
   if (!sendResult.ok) {
+    if (sendResult.submitFailed) {
+      const profile = input.profile || 'bridge default';
+      return {
+        response: `${SUBMIT_FAILED_PREFIX} Prompt typed but send did not start (check: ${sendResult.check}; tab: ${sendResult.url}; profile: ${profile})`
+      };
+    }
     return { response: `${SEND_FAILED_PREFIX} ${sendResult.reason}` };
   }
 
@@ -127,9 +121,11 @@ async function injectAndSend(page, prompt) {
   const sendState = await page.evaluate(`(() => {
     const editor = document.querySelector(${JSON.stringify(EDITOR_SELECTOR)});
     const send = document.querySelector(${JSON.stringify(SEND_SELECTOR)});
+    const userMessageCount = document.querySelectorAll(${JSON.stringify(USER_SELECTOR)}).length;
     return {
       editorText: editor instanceof HTMLElement ? (editor.innerText || '').trim() : '',
-      sendReady: send instanceof HTMLButtonElement ? !send.disabled : false
+      sendReady: send instanceof HTMLButtonElement ? !send.disabled : false,
+      userMessageCount
     };
   })()`);
 
@@ -148,7 +144,54 @@ async function injectAndSend(page, prompt) {
     return { ok: true };
   })()`);
 
-  return clickResult?.ok ? { ok: true } : { ok: false, reason: clickResult?.reason || 'ChatGPT send click failed.' };
+  if (!clickResult?.ok) {
+    return { ok: false, reason: clickResult?.reason || 'ChatGPT send click failed.' };
+  }
+
+  let submit = await waitForSubmitStart(page, sendState.userMessageCount);
+  if (!submit.started && typeof page.pressKey === 'function') {
+    await page.evaluate(`(() => {
+      const editor = document.querySelector(${JSON.stringify(EDITOR_SELECTOR)});
+      if (editor instanceof HTMLElement) {
+        editor.focus();
+        editor.click();
+      }
+    })()`);
+    await page.pressKey('Enter');
+    submit = await waitForSubmitStart(page, sendState.userMessageCount);
+  }
+
+  if (!submit.started) {
+    return {
+      ok: false,
+      submitFailed: true,
+      check: 'composer still holds the prompt, no stop button, no new user message after click and Enter',
+      url: submit.url
+    };
+  }
+  return { ok: true };
+}
+
+async function waitForSubmitStart(page, baselineUserMessageCount) {
+  let latest = { editorFound: false, editorText: '', stopPresent: false, userMessageCount: baselineUserMessageCount, url: '' };
+  for (let poll = 0; poll < 5; poll += 1) {
+    await page.wait(1);
+    latest = await page.evaluate(`(() => {
+      const editor = document.querySelector(${JSON.stringify(EDITOR_SELECTOR)});
+      return {
+        editorFound: editor instanceof HTMLElement,
+        editorText: editor instanceof HTMLElement ? (editor.innerText || '').trim() : '',
+        stopPresent: Boolean(document.querySelector(${JSON.stringify(STOP_SELECTOR)})),
+        userMessageCount: document.querySelectorAll(${JSON.stringify(USER_SELECTOR)}).length,
+        url: location.href
+      };
+    })()`);
+    if (!latest || typeof latest !== 'object') continue;
+    if ((latest.editorFound && !latest.editorText) || latest.stopPresent || Number(latest.userMessageCount) > Number(baselineUserMessageCount)) {
+      return { started: true, url: typeof latest.url === 'string' ? latest.url : '' };
+    }
+  }
+  return { started: false, url: typeof latest?.url === 'string' ? latest.url : '' };
 }
 
 async function waitForAssistantResponse(page, input) {
@@ -160,12 +203,9 @@ async function waitForAssistantResponse(page, input) {
     const probe = await page.evaluate(`(() => {
       const assistants = ${ASSISTANTS_EXPRESSION};
       const streaming = Boolean(document.querySelector(${JSON.stringify(STOP_SELECTOR)}));
-      const bodyText = (document.body?.innerText || '').trim().slice(0, 4000);
       return {
         assistants,
-        streaming,
-        loginLike: ${JSON.stringify(LOGIN_HINTS)}.some((hint) => bodyText.toLowerCase().includes(hint)),
-        challengeLike: ${JSON.stringify(CHALLENGE_HINTS)}.some((hint) => bodyText.toLowerCase().includes(hint))
+        streaming
       };
     })()`);
 
@@ -176,31 +216,9 @@ async function waitForAssistantResponse(page, input) {
     }
     lastResponse = response || lastResponse;
 
-    if (probe.loginLike || probe.challengeLike) {
-      return blocked('ChatGPT page fell back to a login or verification gate while waiting for the response.');
-    }
   }
 
   return { response: lastResponse || NO_RESPONSE_PREFIX };
-}
-
-async function probeChatGptSurface(page) {
-  const result = await page.evaluate(`(() => {
-    const bodyText = (document.body?.innerText || '').trim().slice(0, 4000);
-    const normalized = bodyText.toLowerCase();
-    const editor = document.querySelector(${JSON.stringify(EDITOR_SELECTOR)});
-    const send = document.querySelector(${JSON.stringify(SEND_SELECTOR)});
-    return {
-      url: location.href,
-      editorFound: editor instanceof HTMLElement,
-      sendFound: send instanceof HTMLButtonElement,
-      sendDisabled: send instanceof HTMLButtonElement ? send.disabled : false,
-      loginLike: ${JSON.stringify(LOGIN_HINTS)}.some((hint) => normalized.includes(hint)),
-      challengeLike: ${JSON.stringify(CHALLENGE_HINTS)}.some((hint) => normalized.includes(hint))
-    };
-  })()`);
-
-  return normalizeSurfaceState(result);
 }
 
 async function isOnChatGpt(page) {
@@ -241,35 +259,6 @@ function pickLatestAssistantCandidate(assistants, baselineKeys, prompt) {
   return '';
 }
 
-function normalizeSurfaceState(value) {
-  const object = value && typeof value === 'object' ? value : {};
-  return {
-    url: typeof object.url === 'string' ? object.url : '',
-    editorFound: Boolean(object.editorFound),
-    sendFound: Boolean(object.sendFound),
-    sendDisabled: Boolean(object.sendDisabled),
-    editorReady: Boolean(object.editorFound),
-    loginLike: Boolean(object.loginLike),
-    challengeLike: Boolean(object.challengeLike)
-  };
-}
-
-function summarizeSurfaceIssue(state) {
-  if (state.challengeLike) {
-    return 'ChatGPT page is blocked by a verification or access challenge.';
-  }
-  if (state.loginLike) {
-    return 'ChatGPT page is not in a logged-in ready state.';
-  }
-  if (!state.editorFound) {
-    return 'ChatGPT composer editor was not found.';
-  }
-  if (!state.sendFound) {
-    return 'ChatGPT send button was not found.';
-  }
-  return 'ChatGPT composer never reached a ready state.';
-}
-
 export function isSuccessfulResponse(response) {
   return Boolean(response) && !RETRYABLE_PREFIXES.some((prefix) => response.startsWith(prefix));
 }
@@ -282,6 +271,7 @@ export const __test__ = {
   isOnChatGpt,
   pickLatestAssistantCandidate,
   waitForAssistantResponse,
+  probeChatGptSurface,
   normalizeSurfaceState,
   summarizeSurfaceIssue
 };
