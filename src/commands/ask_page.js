@@ -10,6 +10,7 @@ import {
   normalizeSurfaceState,
   summarizeSurfaceIssue
 } from './chatgpt_surface.js';
+import { attachImages, UPLOAD_TIMEOUT_MS, waitForSendReady } from './ask_upload.js';
 
 const ASSISTANT_SELECTOR = '[data-message-author-role="assistant"], [data-content-search-unit-key$=":assistant"] [data-chatgpt-selection-message-id]';
 // In-page: every mounted assistant reply as { key, text }, keyed by message id so it survives a re-mount.
@@ -19,11 +20,12 @@ const ASSISTANTS_EXPRESSION = `Array.from(document.querySelectorAll(${JSON.strin
     return { key: node.getAttribute('data-chatgpt-selection-message-id') || node.getAttribute('data-message-id') || text, text };
   })
   .filter((entry) => entry.text)`;
-const RETRYABLE_PREFIXES = ['[BLOCKED]', '[NO RESPONSE]', '[SEND FAILED]', '[SUBMIT FAILED]'];
+const RETRYABLE_PREFIXES = ['[BLOCKED]', '[NO RESPONSE]', '[SEND FAILED]', '[SUBMIT FAILED]', '[UPLOAD FAILED]'];
 const BLOCKED_PREFIX = '[BLOCKED]';
 const NO_RESPONSE_PREFIX = '[NO RESPONSE]';
 const SEND_FAILED_PREFIX = '[SEND FAILED]';
 const SUBMIT_FAILED_PREFIX = '[SUBMIT FAILED]';
+const UPLOAD_FAILED_PREFIX = '[UPLOAD FAILED]';
 export async function askOnPage(page, input) {
   let surface = await ensureReadySurface(page, input.newChat);
   if (!surface.editorReady || surface.loginLike || surface.challengeLike) {
@@ -31,8 +33,17 @@ export async function askOnPage(page, input) {
   }
 
   const baselineKeys = new Set(normalizeAssistants(await page.evaluate(ASSISTANTS_EXPRESSION)).map((entry) => entry.key));
-  const sendResult = await injectAndSend(page, input.prompt);
+  const images = Array.isArray(input.images) ? input.images : [];
+  if (images.length) {
+    const upload = await attachImages(page, images);
+    if (!upload.ok) return { response: `${UPLOAD_FAILED_PREFIX} ${upload.reason}` };
+  }
+
+  const sendResult = await injectAndSend(page, input.prompt, { hasImages: images.length > 0 });
   if (!sendResult.ok) {
+    if (sendResult.uploadFailed) {
+      return { response: `${UPLOAD_FAILED_PREFIX} ${sendResult.reason}` };
+    }
     if (sendResult.submitFailed) {
       const profile = input.profile || 'bridge default';
       return {
@@ -92,7 +103,7 @@ async function waitForSurface(page, timeoutMs) {
   return latest;
 }
 
-async function injectAndSend(page, prompt) {
+async function injectAndSend(page, prompt, { hasImages }) {
   const focused = await page.evaluate(`(() => {
     const editor = document.querySelector(${JSON.stringify(EDITOR_SELECTOR)});
     if (!(editor instanceof HTMLElement)) return { ok: false, reason: 'ChatGPT editor not found.' };
@@ -118,22 +129,16 @@ async function injectAndSend(page, prompt) {
 
   await page.wait(1);
 
-  const sendState = await page.evaluate(`(() => {
-    const editor = document.querySelector(${JSON.stringify(EDITOR_SELECTOR)});
-    const send = document.querySelector(${JSON.stringify(SEND_SELECTOR)});
-    const userMessageCount = document.querySelectorAll(${JSON.stringify(USER_SELECTOR)}).length;
-    return {
-      editorText: editor instanceof HTMLElement ? (editor.innerText || '').trim() : '',
-      sendReady: send instanceof HTMLButtonElement ? !send.disabled : false,
-      userMessageCount
-    };
-  })()`);
+  const sendState = await waitForSendReady(page, hasImages ? UPLOAD_TIMEOUT_MS : 1000);
 
   if (!sendState?.editorText) {
     return { ok: false, reason: 'Prompt was not inserted into the ChatGPT editor.' };
   }
 
   if (!sendState.sendReady) {
+    if (hasImages) {
+      return { ok: false, uploadFailed: true, reason: `upload did not finish within ${UPLOAD_TIMEOUT_MS / 1000} s (send button stayed disabled)` };
+    }
     return { ok: false, reason: 'ChatGPT send button never became enabled.' };
   }
 

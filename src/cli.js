@@ -89,7 +89,7 @@ function helpText() {
     'Web-backed ChatGPT CLI via the local opencli Browser Bridge.',
     '',
     'Usage:',
-    '  chatgptcli ask <prompt> [--new] [--file <path>] [--timeout <seconds>] [--max-attempts <n>] [--retry-delay-ms <ms>] [-f json|text]',
+    '  chatgptcli ask <prompt> [--new] [--file <path>] [--image <path>]... [--timeout <seconds>] [--max-attempts <n>] [--retry-delay-ms <ms>] [-f json|text]',
     '  chatgptcli read [chat-url-or-id] [--files-output <dir>] [--file-id <id>] [--files-inline] [-f json|text]',
     '  chatgptcli switch <chat-url-or-id>',
     // doctor spawns the opencli CLI, which a compiled exe does not carry.

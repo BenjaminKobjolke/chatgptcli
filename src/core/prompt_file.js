@@ -2,11 +2,18 @@
 import { readFileSync, statSync } from 'node:fs';
 import { basename } from 'node:path';
 import { AppError, ERROR_CODE } from './errors.js';
+import { isImagePath } from './prompt_images.js';
 
 // ponytail: 1MB cap, raise if real use hits it — huge DOM inserts can hang the composer
 const MAX_FILE_BYTES = 1024 * 1024;
 
 export function buildPromptWithFile(prompt, filePath) {
+  if (isImagePath(filePath)) {
+    throw new AppError(ERROR_CODE.INPUT_INVALID, `File is an image: ${filePath}`, {
+      hint: `Attach images with --image "${filePath}"; --file only inlines text.`
+    });
+  }
+
   let stats = null;
   try {
     stats = statSync(filePath);

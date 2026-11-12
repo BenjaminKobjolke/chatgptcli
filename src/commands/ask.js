@@ -40,6 +40,7 @@ export async function runAsk(input) {
     const mode = (input.newChat || attempt > 1) ? 'fresh-chat' : 'current-chat';
     const result = await browserAskRunner({
       prompt,
+      images: input.images || [],
       timeoutSeconds: input.timeoutSeconds,
       newChat: mode === 'fresh-chat'
     });
@@ -90,6 +91,7 @@ async function runBrowserAsk(input) {
   }, async (page) => {
     return askOnPage(page, {
       prompt: input.prompt,
+      images: input.images || [],
       timeoutMs: input.timeoutSeconds * 1000,
       newChat: input.newChat,
       profile

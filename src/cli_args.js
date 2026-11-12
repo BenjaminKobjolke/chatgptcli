@@ -3,6 +3,7 @@ import { AppError, ERROR_CODE } from './core/errors.js';
 import { requireValue } from '../.omx/reference/opencli-app-kit/src/core/cli_shell.js';
 import { normalizeChatUrl } from './commands/read.js';
 import { buildPromptWithFile } from './core/prompt_file.js';
+import { resolveImagePaths } from './core/prompt_images.js';
 
 export function parseAskArgs(args) {
   const positional = [];
@@ -12,6 +13,7 @@ export function parseAskArgs(args) {
   let maxAttempts = 5;
   let retryDelayMs = 1500;
   let filePath = null;
+  const imagePaths = [];
 
   for (let i = 0; i < args.length; i += 1) {
     const token = args[i];
@@ -28,6 +30,12 @@ export function parseAskArgs(args) {
 
     if (token === '--file') {
       filePath = requireValue(args, i, '--file');
+      i += 1;
+      continue;
+    }
+
+    if (token === '--image') {
+      imagePaths.push(requireValue(args, i, '--image'));
       i += 1;
       continue;
     }
@@ -78,7 +86,7 @@ export function parseAskArgs(args) {
     }
 
     throw new AppError(ERROR_CODE.INPUT_INVALID, `Unknown option: ${token}`, {
-      hint: 'Supported options: --new, --file, --timeout, --max-attempts, --retry-delay-ms, -f/--format.'
+      hint: 'Supported options: --new, --file, --image, --timeout, --max-attempts, --retry-delay-ms, -f/--format.'
     });
   }
 
@@ -93,7 +101,9 @@ export function parseAskArgs(args) {
     prompt = buildPromptWithFile(prompt, filePath);
   }
 
-  return { prompt, format, timeoutSeconds, newChat, maxAttempts, retryDelayMs };
+  const images = resolveImagePaths(imagePaths);
+
+  return { prompt, format, timeoutSeconds, newChat, maxAttempts, retryDelayMs, images };
 }
 
 export function parseReadArgs(args) {
