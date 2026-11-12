@@ -9,6 +9,9 @@ import {
   resolveOpenCliPaths as resolveSharedOpenCliPaths
 } from '../../.omx/reference/opencli-app-kit/src/core/opencli.js';
 import { resolveBridgeProfile } from '../core/settings.js';
+import { CHATGPT_ROOT_URL, isChatHost } from '../core/chatgpt_site.js';
+import { probeChatGptSurface } from './chatgpt_surface.js';
+import { withSitePage } from '../../.omx/reference/opencli-app-kit/src/core/session.js';
 import { writeStdout } from '../../.omx/reference/opencli-app-kit/src/core/cli_shell.js';
 
 const APP_NAME = 'chatgptcli';
@@ -22,6 +25,7 @@ let pathExists = (path) => existsSync(path);
 let isCompiled = IS_COMPILED;
 let bridgeStatus = fetchBridgeStatus;
 let startBridge = startBridgeDaemon;
+let chatgptLoginCheck = checkChatgptLogin;
 let resolvePaths = () => resolveSharedOpenCliPaths(APP_NAME);
 
 export function __setSetupDepsForTest(deps) {
@@ -40,6 +44,9 @@ export function __setSetupDepsForTest(deps) {
   if (deps.startBridge) {
     startBridge = deps.startBridge;
   }
+  if (deps.chatgptLoginCheck) {
+    chatgptLoginCheck = deps.chatgptLoginCheck;
+  }
   if ('isCompiled' in deps) {
     isCompiled = deps.isCompiled;
   }
@@ -52,6 +59,7 @@ export function __resetSetupDepsForTest() {
   isCompiled = IS_COMPILED;
   bridgeStatus = fetchBridgeStatus;
   startBridge = startBridgeDaemon;
+  chatgptLoginCheck = checkChatgptLogin;
 }
 
 // Every check is `{ ok, message, steps }`: one [OK]/[FAIL] line plus the next
@@ -62,7 +70,17 @@ export async function runSetup() {
   // missing opencli build — setup changes nothing, so it only asks once the
   // on-disk checks hold.
   if (checks.every((check) => check.ok)) {
-    checks.push(await bridgeCheck());
+    const bridge = await bridgeCheck();
+    checks.push(bridge);
+    if (bridge.ok) {
+      let login;
+      try {
+        login = await chatgptLoginCheck();
+      } catch (error) {
+        login = { loggedIn: null, reason: error instanceof Error ? error.message : String(error) };
+      }
+      checks.push(loginStateCheck(login));
+    }
   }
 
   const lines = ['chatgptcli setup', '', ...checks.map((check) => `${check.ok ? '[OK]' : '[FAIL]'} ${check.message}`), ''];
@@ -72,7 +90,7 @@ export async function runSetup() {
 
   lines.push('Actionable next steps:', ...checks.flatMap((check) => check.steps));
   lines.push('- Launch dedicated browser profile: `chatgptcli launch` (configure via `chatgptcli set-chrome <exe> [--profile <dir>]`).');
-  lines.push('- In that browser, complete one-time login at `https://chatgpt.com/`.');
+  lines.push('- In that browser, complete one-time login at `https://chatgpt.com/` if setup reports that you are logged out.');
   if (isCompiled) {
     lines.push(`- Reuse existing Chrome profile option: install the OpenCLI extension from ${EXTENSION_STORE_URL}.`);
     lines.push('- Verify end-to-end: `chatgptcli ask "hello"`.');
@@ -127,6 +145,50 @@ async function fetchBridgeStatus() {
   const stored = resolveBridgeProfile();
   const { getDaemonHealth } = await loadSharedBrowserBridge(APP_NAME);
   return { stored, health: await getDaemonHealth({ preferredContextId: stored }) };
+}
+
+async function checkChatgptLogin() {
+  const profile = resolveBridgeProfile();
+  return withSitePage({
+    appName: APP_NAME,
+    session: 'site:chatgpt',
+    timeout: 30,
+    preferredContextId: profile || undefined
+  }, async (page) => {
+    const url = await page.evaluate('window.location.href').catch(() => '');
+    let onChatHost = false;
+    try {
+      onChatHost = isChatHost(new URL(url).hostname);
+    } catch {}
+    if (!onChatHost) await page.goto(CHATGPT_ROOT_URL, { settleMs: 1500 });
+    const surface = await probeChatGptSurface(page);
+    return {
+      loggedIn: surface.loggedIn,
+      profile,
+      reason: surface.loginError || (surface.loggedIn === null ? 'ChatGPT session did not return a login state.' : '')
+    };
+  });
+}
+
+function loginStateCheck(value) {
+  const result = value && typeof value === 'object' ? value : {};
+  const profile = typeof result.profile === 'string' && result.profile ? result.profile : 'bridge default';
+  if (result.loggedIn === true) {
+    return { ok: true, message: `ChatGPT logged in (profile ${profile})`, steps: [] };
+  }
+  if (result.loggedIn === false) {
+    return {
+      ok: false,
+      message: `ChatGPT is not logged in in the bridge browser (profile ${profile})`,
+      steps: ['- Log in at https://chatgpt.com/ in the bridge browser window, then rerun setup.']
+    };
+  }
+  const reason = typeof result.reason === 'string' && result.reason ? `: ${result.reason}` : '';
+  return {
+    ok: false,
+    message: `ChatGPT login state could not be checked${reason}`,
+    steps: ['- Open https://chatgpt.com/ in the bridge browser and rerun setup.']
+  };
 }
 
 async function startBridgeDaemon(stored) {

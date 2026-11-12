@@ -103,7 +103,7 @@ function helpText() {
     '  ask always uses chatgpt.com web UI, not the OpenAI API.',
     '  ask reuses the site:chatgpt browser session and retries blocked or empty responses with a fresh chat fallback.',
     '  read shows attachments as [image-01]/[report-01] markers; --files-output <dir> downloads them, --files-inline prints report and file bodies instead.',
-    '  setup validates local prerequisites and the Browser Bridge connection, and prints browser-extension/login guidance.',
+    '  setup validates local prerequisites, the Browser Bridge connection, and the chatgpt.com login state.',
     '  Requires the opencli Browser Bridge and a browser profile that has already logged into chatgpt.com at least once.'
   ].join('\n');
 }
