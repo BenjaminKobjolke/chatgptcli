@@ -1,6 +1,6 @@
 # setup
 
-Preflight check. Validates local prerequisites and the Browser Bridge connection, and prints next steps.
+Preflight check. Validates local prerequisites, the Browser Bridge connection, and whether the selected browser profile is logged into ChatGPT.
 
 ```bash
 chatgptcli setup
@@ -9,6 +9,16 @@ chatgptcli setup
 No options.
 
 ## Checks
+
+After the Browser Bridge connects, setup opens `https://chatgpt.com/` only when the tab is not already on a ChatGPT page, then checks ChatGPT's session state:
+
+| Line | Meaning |
+|---|---|
+| `[OK] ChatGPT logged in (profile <id>)` | The browser profile has a ChatGPT session. |
+| `[FAIL] ChatGPT is not logged in in the bridge browser (profile <id>)` | Log in at `https://chatgpt.com/` in the bridge browser window and rerun setup. |
+| `[FAIL] ChatGPT login state could not be checked: <reason>` | The session check failed or returned no result. Open `https://chatgpt.com/` in the bridge browser and rerun setup. |
+
+A failed login check makes setup exit with code `6`, like other configuration failures.
 
 Run from source (`bun run src/main.js setup`):
 

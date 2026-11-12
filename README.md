@@ -99,7 +99,7 @@ This validates:
 - `chatgptcli ask` uses the ChatGPT web app, not the OpenAI API.
 - `chatgptcli ask` talks directly to `opencli`'s `BrowserBridge`; it does not rely on the desktop-only `opencli chatgpt` adapter.
 - `chatgptcli doctor` forwards to `opencli doctor` (source checkout only; the compiled exe uses `setup`).
-- `chatgptcli setup` is a preflight checker: local prerequisites plus whether a browser profile is connected to the Browser Bridge. It changes nothing.
+- `chatgptcli setup` checks local prerequisites, whether a browser profile is connected to the Browser Bridge, and whether that profile is logged into chatgpt.com. It changes nothing.
 - By default, `chatgptcli` looks for `opencli` in `.omx/reference/opencli`.
 - The shared app kit is linked at `.omx/reference/opencli-app-kit`; this checkout also uses it as a local package dependency.
 - Keep `.omx/reference/opencli` pointed at your OpenCLI checkout. The app-kit checkout has its own `.omx/reference/opencli` link for bundling the Browser Bridge.
