@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test';
+import { attachImages } from '../src/commands/ask_upload.js';
 import { askOnPage, shouldRetry } from '../src/commands/ask_page.js';
 
 function fakePage({ inputFound = true, previews = true, readyAt = 3, bridge = true } = {}) {
@@ -46,6 +47,51 @@ function fakePage({ inputFound = true, previews = true, readyAt = 3, bridge = tr
 }
 
 describe('ask image uploads', () => {
+  test('selects the image-only input when the composer has multiple file inputs', async () => {
+    const inputs = [
+      fakeFileInput('image/*,video/*'),
+      fakeFileInput('image/*')
+    ];
+    const form = { querySelectorAll: () => inputs };
+    const document = {
+      querySelector: () => ({ closest: () => form }),
+      querySelectorAll: () => []
+    };
+    let selected;
+    const page = {
+      evaluate: async (script) => {
+        if (script.includes('const names =')) return true;
+        return Function('document', `return ${script}`)(document);
+      },
+      setFileInput: async (_paths, selector) => {
+        const attribute = selector.match(/\[([^=]+)/)[1];
+        selected = inputs.find((input) => input.attributes[attribute] === '1');
+      },
+      wait: async () => {}
+    };
+
+    const result = await attachImages(page, ['one.png']);
+
+    expect(result).toEqual({ ok: true });
+    expect(selected).toBe(inputs[1]);
+  });
+
+  test('keeps equally specific matching file inputs ambiguous', async () => {
+    const inputs = [fakeFileInput('image/*'), fakeFileInput('image/*')];
+    const form = { querySelectorAll: () => inputs };
+    const document = {
+      querySelector: () => ({ closest: () => form }),
+      querySelectorAll: () => []
+    };
+    const page = {
+      evaluate: async (script) => Function('document', `return ${script}`)(document)
+    };
+
+    const result = await attachImages(page, ['one.png']);
+
+    expect(result).toEqual({ ok: false, reason: 'composer file input is ambiguous' });
+  });
+
   test('uploads before typing and waits for previews and send readiness', async () => {
     const page = fakePage();
     const result = await askOnPage(page, { prompt: 'Review these', images: ['a.png', 'b.jpg'], timeoutMs: 1000, newChat: true });
@@ -99,3 +145,16 @@ describe('ask image uploads', () => {
     expect(page.calls.filter((call) => call === 'sendReady')).toHaveLength(1);
   });
 });
+
+function fakeFileInput(accept) {
+  const attributes = {};
+  return {
+    accept,
+    multiple: true,
+    disabled: false,
+    attributes,
+    hasAttribute: (name) => Object.hasOwn(attributes, name),
+    setAttribute: (name, value) => { attributes[name] = value; },
+    removeAttribute: (name) => { delete attributes[name]; }
+  };
+}

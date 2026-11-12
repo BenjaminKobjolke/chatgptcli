@@ -16,20 +16,29 @@ const PREPARE_INPUT_SCRIPT = `(() => {
   if (!form) return { ok: false, reason: 'composer file input not found' };
   const files = ${'__IMAGE_FILES__'};
   const mimeByExtension = { '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.webp': 'image/webp', '.gif': 'image/gif' };
+  const acceptedTypes = (input) => (input.accept || '').split(',').map((value) => value.trim().toLowerCase()).filter(Boolean);
   const accepts = (input, file) => {
-    const accepted = (input.accept || '').split(',').map((value) => value.trim().toLowerCase()).filter(Boolean);
+    const accepted = acceptedTypes(input);
     if (!accepted.length) return true;
     const extension = file.slice(file.lastIndexOf('.')).toLowerCase();
     const mime = mimeByExtension[extension];
     return accepted.some((value) => value === 'image/*' || value === extension || value === mime);
   };
+  const isImageOnly = (input) => {
+    const accepted = acceptedTypes(input);
+    return accepted.length > 0 && accepted.every((value) =>
+      value === 'image/*' || value.startsWith('image/') || Object.values(mimeByExtension).includes(value) || Object.keys(mimeByExtension).includes(value)
+    );
+  };
   const candidates = Array.from(form.querySelectorAll('input[type="file"]')).filter((input) =>
     !input.disabled && !input.hasAttribute('capture') && (files.length === 1 || input.multiple) && files.every((file) => accepts(input, file))
   );
-  if (candidates.length !== 1) {
-    return { ok: false, reason: candidates.length ? 'composer file input is ambiguous' : 'composer file input not found' };
+  const imageOnlyCandidates = candidates.filter(isImageOnly);
+  const preferredCandidates = imageOnlyCandidates.length ? imageOnlyCandidates : candidates;
+  if (preferredCandidates.length !== 1) {
+    return { ok: false, reason: preferredCandidates.length ? 'composer file input is ambiguous' : 'composer file input not found' };
   }
-  candidates[0].setAttribute('data-chatgptcli-file-input', '1');
+  preferredCandidates[0].setAttribute('data-chatgptcli-file-input', '1');
   return { ok: true };
 })()`;
 
