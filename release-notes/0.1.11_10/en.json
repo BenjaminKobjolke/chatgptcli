@@ -1,0 +1,11 @@
+{
+  "version": "0.1.11",
+  "build": 10,
+  "date": "2026-11-12",
+  "title": "Attach screenshots to ask prompts",
+  "notes": [
+    "ask --image <path> attaches 1–10 PNG, JPG, JPEG, WebP, or GIF images up to 20 MB each, waits for uploads before sending, and directs image files passed to --file to use --image.",
+    "ask confirms that the prompt has started sending before it waits for an answer.",
+    "setup reports whether ChatGPT is logged in after the browser bridge connects."
+  ]
+}
