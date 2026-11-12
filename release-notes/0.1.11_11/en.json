@@ -1,0 +1,12 @@
+{
+  "version": "0.1.11",
+  "build": 11,
+  "date": "2026-11-12",
+  "title": "Reliable sending and login checks",
+  "notes": [
+    "Long and multi-line prompts, including prompts loaded with --file, are confirmed as sent; Enter is used as a fallback when needed.",
+    "A failed send reports [SUBMIT FAILED] with the failed check, tab URL, and browser profile instead of incorrectly saying ChatGPT is not logged in.",
+    "Prompt text that mentions login no longer makes a logged-in page look logged out.",
+    "Setup reports the ChatGPT login state and starts a stopped browser bridge."
+  ]
+}
