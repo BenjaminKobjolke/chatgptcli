@@ -89,6 +89,8 @@ describe('cli', () => {
     return async () => statuses[Math.min(index++, statuses.length - 1)];
   }
 
+  const loggedInCheck = async () => ({ loggedIn: true, profile: 'abc' });
+
   test('setup checks prerequisites and prints guidance', async () => {
     __setSetupDepsForTest({
       runProcess: () => ({ status: 0, stdout: '1.3.5' }),
@@ -97,7 +99,8 @@ describe('cli', () => {
         { stored: '', health: { state: 'stopped', status: null } },
         { stored: '', health: { state: 'ready', status: { profiles: [{ contextId: 'abc', extensionConnected: true }] } } }
       ),
-      startBridge: async () => {}
+      startBridge: async () => {},
+      chatgptLoginCheck: loggedInCheck
     });
 
     const stdout = captureStdout();
@@ -116,7 +119,8 @@ describe('cli', () => {
         { stored: 'abc', health: { state: 'stopped', status: null } },
         { stored: 'abc', health: { state: 'ready', status: { profiles: [{ contextId: 'abc', extensionConnected: true }] } } }
       ),
-      startBridge: async (stored) => startCalls.push(stored)
+      startBridge: async (stored) => startCalls.push(stored),
+      chatgptLoginCheck: loggedInCheck
     });
 
     const stdout = captureStdout();
@@ -163,7 +167,8 @@ describe('cli', () => {
     __setSetupDepsForTest({
       isCompiled: true,
       bridgeStatus: bridgeStatus('ready', ['abc']),
-      startBridge: async () => { startCalls += 1; }
+      startBridge: async () => { startCalls += 1; },
+      chatgptLoginCheck: loggedInCheck
     });
 
     const code = await runCli(['setup']);
@@ -179,7 +184,8 @@ describe('cli', () => {
       isCompiled: true,
       runProcess: () => ({ status: 1 }),
       pathExists: () => false,
-      bridgeStatus: bridgeStatus('ready', ['abc'])
+      bridgeStatus: bridgeStatus('ready', ['abc']),
+      chatgptLoginCheck: loggedInCheck
     });
 
     const stdout = captureStdout();
@@ -194,7 +200,7 @@ describe('cli', () => {
   });
 
   test('setup names a stored bridge profile that is no longer connected', async () => {
-    __setSetupDepsForTest({ isCompiled: true, bridgeStatus: bridgeStatus('ready', ['abc'], 'old') });
+    __setSetupDepsForTest({ isCompiled: true, bridgeStatus: bridgeStatus('ready', ['abc'], 'old'), chatgptLoginCheck: loggedInCheck });
 
     const stdout = captureStdout();
     const code = await runCli(['setup']);
@@ -212,6 +218,50 @@ describe('cli', () => {
 
     expect(code).toBe(6);
     expect(stdout.join('')).toContain('[FAIL] Browser Bridge: no browser profile connected');
+  });
+
+  test('setup reports the ChatGPT login state after the bridge connects', async () => {
+    __setSetupDepsForTest({
+      isCompiled: true,
+      bridgeStatus: bridgeStatus('ready', ['abc'], 'abc'),
+      chatgptLoginCheck: async () => ({ loggedIn: true, profile: 'abc' })
+    });
+
+    const stdout = captureStdout();
+    const code = await runCli(['setup']);
+
+    expect(code).toBe(0);
+    expect(stdout.join('')).toContain('[OK] ChatGPT logged in (profile abc)');
+  });
+
+  test('setup reports when ChatGPT is logged out', async () => {
+    __setSetupDepsForTest({
+      isCompiled: true,
+      bridgeStatus: bridgeStatus('ready', ['abc'], 'abc'),
+      chatgptLoginCheck: async () => ({ loggedIn: false, profile: 'abc' })
+    });
+
+    const stdout = captureStdout();
+    const code = await runCli(['setup']);
+
+    expect(code).toBe(6);
+    expect(stdout.join('')).toContain('[FAIL] ChatGPT is not logged in in the bridge browser (profile abc)');
+    expect(stdout.join('')).toContain('Log in at https://chatgpt.com/ in the bridge browser window');
+  });
+
+  test('setup reports when ChatGPT login state is unknown', async () => {
+    __setSetupDepsForTest({
+      isCompiled: true,
+      bridgeStatus: bridgeStatus('ready', ['abc'], 'abc'),
+      chatgptLoginCheck: async () => ({ loggedIn: null, profile: 'abc', reason: 'session fetch failed' })
+    });
+
+    const stdout = captureStdout();
+    const code = await runCli(['setup']);
+
+    expect(code).toBe(6);
+    expect(stdout.join('')).toContain('[FAIL] ChatGPT login state could not be checked: session fetch failed');
+    expect(stdout.join('')).toContain('Open https://chatgpt.com/ in the bridge browser and rerun setup');
   });
 
   test('setup rejects unknown options', async () => {

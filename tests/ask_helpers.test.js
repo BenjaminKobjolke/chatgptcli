@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { __test__ as askHelpers } from '../src/commands/ask_page.js';
+import { __test__ as surfaceHelpers } from '../src/commands/chatgpt_surface.js';
 
 describe('ask helpers', () => {
   test('recognizes chatgpt hostnames', async () => {
@@ -48,5 +49,29 @@ describe('ask helpers', () => {
     expect(askHelpers.summarizeSurfaceIssue(askHelpers.normalizeSurfaceState({ challengeLike: true }))).toContain('verification');
     expect(askHelpers.summarizeSurfaceIssue(askHelpers.normalizeSurfaceState({ loginLike: true }))).toContain('logged-in ready state');
     expect(askHelpers.summarizeSurfaceIssue(askHelpers.normalizeSurfaceState({ editorFound: false, sendFound: false }))).toContain('editor');
+  });
+
+  test('does not treat prompt login hints as a challenge when the composer exists', () => {
+    const state = surfaceHelpers.normalizeSurfaceState({
+      bodyText: 'Login, sign in, and access denied',
+      editorFound: true,
+      sendFound: true,
+      sendDisabled: false
+    });
+
+    expect(state.loginLike).toBe(false);
+    expect(state.challengeLike).toBe(false);
+  });
+
+  test('does not treat challenge wording in a submitted user message as a page challenge', () => {
+    const submittedMessage = `${'x'.repeat(5000)} access denied`;
+    const state = surfaceHelpers.normalizeSurfaceState({
+      bodyText: submittedMessage,
+      userMessageTexts: [submittedMessage],
+      editorFound: false,
+      sendFound: false
+    });
+
+    expect(state.challengeLike).toBe(false);
   });
 });
