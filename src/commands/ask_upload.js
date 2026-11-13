@@ -7,6 +7,7 @@ import {
 } from './chatgpt_surface.js';
 import { IMAGE_MIME_TYPES } from '../core/prompt_images.js';
 import { injectFilesInPage } from './ask_upload_inject.js';
+import { formatComposerState, readComposerState } from './ask_composer_state.js';
 
 const PREVIEW_TIMEOUT_MS = 20_000;
 export const UPLOAD_TIMEOUT_MS = 60_000;
@@ -70,29 +71,50 @@ export async function attachImages(page, paths) {
     return { ok: false, reason: `Browser Bridge file upload failed: ${message}` };
   }
 
-  return waitForPreviews(page, paths);
+  return waitForPreviews(page, paths, 'native');
 }
 
 async function uploadWithFallback(page, paths) {
   const result = await injectFilesInPage(page, paths, COMPOSER_FILE_INPUT_SELECTOR);
-  if (result.ok) return waitForPreviews(page, paths);
+  if (result.ok) return waitForPreviews(page, paths, 'fallback', result.assignmentState);
   return { ok: false, reason: `Browser upload fallback failed: ${result.reason}; ${FILE_ACCESS_HINT}` };
 }
 
-async function waitForPreviews(page, paths) {
+async function waitForPreviews(page, paths, uploadPath, assignmentState) {
   const names = paths.map((path) => path.split(/[\\/]/).at(-1));
   const previews = buildPreviewScript(names, paths.length);
   try {
     for (let poll = 0; poll < Math.ceil(PREVIEW_TIMEOUT_MS / 1000); poll += 1) {
       await page.wait(1);
-      if (await page.evaluate(previews)) return { ok: true };
+      if (await page.evaluate(previews)) return { ok: true, uploadPath };
     }
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     return { ok: false, reason: `could not verify image previews: ${message}` };
   }
 
-  return { ok: false, reason: `image preview did not appear for ${names.join(', ')} within 20 s` };
+  const state = await readComposerState(page, { uploadPath });
+  const assignment = assignmentState ? `; ${formatAssignmentState(assignmentState)}` : '';
+  return {
+    ok: false,
+    reason: `image preview did not appear for ${names.join(', ')} within 20 s; composer: ${formatComposerState(state)}${assignment}`
+  };
+}
+
+function formatAssignmentState(state) {
+  const afterChange = formatInputSnapshot(state.afterChange);
+  const inspection = state.handlerInspection || {};
+  const stages = Object.entries(state.stages || {})
+    .map(([name, snapshot]) => `${name}:${formatInputSnapshot(snapshot)}`)
+    .join(',');
+  return `assignmentAfterChange=${afterChange} handlerFound=${Boolean(state.handlerFound)} dispatchPath=${state.dispatchPath || 'unknown'} handlerReadsFiles=${Boolean(inspection.readsFiles)} handlerClearsValue=${Boolean(inspection.clearsValue)} handlerError=${state.handlerError || 'none'} stages=${stages}`;
+}
+
+function formatInputSnapshot(state) {
+  const connection = state?.connected ? 'connected' : 'detached';
+  const marker = state?.marked ? 'present' : 'missing';
+  const files = state?.files == null ? 'null' : state.files;
+  return `${connection}/${marker}/${files}`;
 }
 
 function buildPreviewScript(names, count) {

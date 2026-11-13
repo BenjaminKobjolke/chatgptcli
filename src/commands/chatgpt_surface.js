@@ -8,6 +8,7 @@ export const STOP_SELECTOR = '[data-testid="stop-button"], form button[aria-labe
 // The legacy role markup comes first, followed by redesigned content-search units.
 export const USER_SELECTOR = '[data-message-author-role="user"], [data-content-search-unit-key$=":user"]';
 export const COMPOSER_FILE_INPUT_SELECTOR = '[data-chatgptcli-file-input="1"]';
+export const COMPOSER_ATTACHMENT_TILE_SELECTOR = '[data-composer-attachments] > *, [role="group"][aria-label], button[aria-label^="Remove"]';
 export const CHALLENGE_HINTS = Object.freeze([
   'captcha',
   'verify you are human',

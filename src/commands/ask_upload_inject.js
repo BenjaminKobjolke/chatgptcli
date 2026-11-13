@@ -29,7 +29,7 @@ export async function injectFilesInPage(page, paths, selector) {
     }
 
     const assignResult = await page.evaluate(buildAssignScript(files, selector));
-    if (assignResult?.ok) return { ok: true };
+    if (assignResult?.ok) return { ok: true, assignmentState: assignResult.assignmentState };
     return { ok: false, reason: assignResult?.reason || 'page could not assign image files' };
   } catch (error) {
     const reason = error instanceof Error ? error.message : String(error);
@@ -60,13 +60,44 @@ function buildAssignScript(files, selector) {
     files.forEach((file) => transfer.items.add(file));
     input.files = transfer.files;
     input.dataset.chatgptcliAssigned = '1';
+    const snapshotInput = () => ({
+      connected: Boolean(input.isConnected),
+      marked: input.getAttribute('data-chatgptcli-file-input') === '1',
+      files: input.files?.length ?? null
+    });
+    const stages = { assigned: snapshotInput() };
     const reactKey = Object.keys(input).find((key) => key.startsWith('__reactProps$'));
     const onChange = reactKey && input[reactKey]?.onChange;
-    if (onChange) onChange({ target: input, currentTarget: input });
-    else {
-      input.dispatchEvent(new Event('input', { bubbles: true }));
-      input.dispatchEvent(new Event('change', { bubbles: true }));
+    const handlerFound = typeof onChange === 'function';
+    const handlerSource = handlerFound ? Function.prototype.toString.call(onChange) : '';
+    const handlerInspection = {
+      readsFiles: handlerSource.includes('.files'),
+      clearsValue: handlerSource.includes('.value =')
+    };
+    stages.handlerEntry = snapshotInput();
+    const dispatchPath = handlerFound ? 'react' : 'events';
+    let handlerError = 'none';
+    try {
+      if (handlerFound) onChange({ target: input, currentTarget: input });
+      else {
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+        input.dispatchEvent(new Event('change', { bubbles: true }));
+      }
+    } catch (error) {
+      handlerError = error instanceof Error ? error.name : typeof error;
     }
-    return { ok: true };
+    stages.handlerExit = snapshotInput();
+    stages.afterHandlerReturn = snapshotInput();
+    return {
+      ok: true,
+      assignmentState: {
+        handlerFound,
+        dispatchPath,
+        handlerInspection,
+        handlerError,
+        stages,
+        afterChange: snapshotInput()
+      }
+    };
   })()`;
 }

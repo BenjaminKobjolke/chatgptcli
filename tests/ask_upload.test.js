@@ -100,7 +100,7 @@ describe('ask image uploads', () => {
 
     const result = await attachImages(page, ['one.png']);
 
-    expect(result).toEqual({ ok: true });
+    expect(result).toEqual({ ok: true, uploadPath: 'native' });
     expect(selected).toBe(inputs[1]);
   });
 
@@ -140,7 +140,7 @@ describe('ask image uploads', () => {
     const page = fakePage({ bridge: false });
     const imagePath = createTempImage('a.png', Buffer.from('image'));
     const result = await attachImages(page, [imagePath]);
-    expect(result).toEqual({ ok: true });
+    expect(result).toEqual({ ok: true, uploadPath: 'fallback' });
     expect(page.calls.some((call) => Array.isArray(call) && call[0] === 'inject')).toBe(true);
   });
 
@@ -153,7 +153,7 @@ describe('ask image uploads', () => {
     const page = fakePage({ bridge: 'not-allowed' });
     const result = await attachImages(page, [imagePath]);
 
-    expect(result).toEqual({ ok: true });
+    expect(result).toEqual({ ok: true, uploadPath: 'fallback' });
     const stagingScripts = page.calls.filter((call) => Array.isArray(call) && call[0] === 'inject' && !call[1].includes('dataset.chatgptcliAssigned'));
     const assignScripts = page.calls.filter((call) => Array.isArray(call) && call[0] === 'inject' && call[1].includes('dataset.chatgptcliAssigned'));
     const injectedScripts = page.calls.filter((call) => Array.isArray(call) && call[0] === 'inject');
@@ -173,8 +173,8 @@ describe('ask image uploads', () => {
     const secondImage = createTempImage('second.png', Buffer.from('second image'));
     const page = fallbackPage();
 
-    expect(await attachImages(page, [firstImage])).toEqual({ ok: true });
-    expect(await attachImages(page, [secondImage])).toEqual({ ok: true });
+    expect(await attachImages(page, [firstImage])).toEqual({ ok: true, uploadPath: 'fallback' });
+    expect(await attachImages(page, [secondImage])).toEqual({ ok: true, uploadPath: 'fallback' });
 
     expect(page.input.files.map((file) => file.name)).toEqual(['second.png']);
     expect(page.changeEvents).toBe(4);
@@ -184,13 +184,36 @@ describe('ask image uploads', () => {
     const imagePath = createTempImage('once.png', Buffer.from('image'));
     const page = fallbackPage();
 
-    expect(await attachImages(page, [imagePath])).toEqual({ ok: true });
+    expect(await attachImages(page, [imagePath])).toEqual({ ok: true, uploadPath: 'fallback' });
     const assignedFiles = page.input.files;
     const changeEvents = page.changeEvents;
     expect(await page.evaluate(page.assignScript)).toEqual({ ok: true });
 
     expect(page.input.files).toBe(assignedFiles);
     expect(page.changeEvents).toBe(changeEvents);
+  });
+
+  test('reports fallback input state immediately after the change event', async () => {
+    const imagePath = createTempImage('cleared.png', Buffer.from('image'));
+    const page = fallbackPage({ previews: false, clearFilesOnChange: true });
+
+    const result = await attachImages(page, [imagePath]);
+
+    expect(result.ok).toBe(false);
+    expect(result.reason).toContain('assignmentAfterChange=connected/present/0');
+    expect(result.reason).toContain('handlerFound=false dispatchPath=events');
+    expect(result.reason).toContain('stages=assigned:connected/present/1,handlerEntry:connected/present/1,handlerExit:connected/present/0,afterHandlerReturn:connected/present/0');
+  });
+
+  test('records fallback assignment snapshots around a React change handler', async () => {
+    const imagePath = createTempImage('react.png', Buffer.from('image'));
+    const page = fallbackPage({ previews: false, reactHandler: true });
+
+    const result = await attachImages(page, [imagePath]);
+
+    expect(result.reason).toContain('handlerFound=true dispatchPath=react');
+    expect(result.reason).toContain('handlerReadsFiles=true handlerClearsValue=true handlerError=none');
+    expect(result.reason).toContain('stages=assigned:connected/present/1,handlerEntry:connected/present/1,handlerExit:connected/present/1,afterHandlerReturn:connected/present/1');
   });
 
   test('does not fall back for unrelated bridge errors', async () => {
@@ -211,7 +234,8 @@ describe('ask image uploads', () => {
 
   test('reports when previews do not appear', async () => {
     const result = await askOnPage(fakePage({ previews: false }), { prompt: 'Review', images: ['a.png'], timeoutMs: 1000, newChat: true });
-    expect(result.response).toContain('[UPLOAD FAILED] image preview did not appear');
+    expect(result.response).toStartWith('[UPLOAD FAILED] image preview did not appear');
+    expect(result.response).toContain('composer:');
   });
 
   test('does not click send when upload readiness times out', async () => {
@@ -256,7 +280,7 @@ function fakeFileInput(accept) {
   };
 }
 
-function fallbackPage() {
+function fallbackPage({ previews = true, clearFilesOnChange = false, reactHandler = false } = {}) {
   const attributes = {};
   const dataset = {};
   const input = {
@@ -266,6 +290,8 @@ function fallbackPage() {
     attributes,
     dataset,
     files: [],
+    isConnected: true,
+    getAttribute: (name) => attributes[name] ?? null,
     hasAttribute: (name) => Object.hasOwn(attributes, name),
     setAttribute: (name, value) => {
       attributes[name] = value;
@@ -281,13 +307,26 @@ function fallbackPage() {
         delete dataset[key];
       }
     },
-    dispatchEvent: () => { page.changeEvents += 1; }
+    dispatchEvent: (event) => {
+      page.changeEvents += 1;
+      if (clearFilesOnChange && event.type === 'change') input.files = [];
+    }
   };
-  const form = { querySelectorAll: () => [input] };
+  if (reactHandler) {
+    input.__reactProps$test = { onChange: (event) => {
+      void event.target.files;
+      event.target.value = '';
+    } };
+  }
+  const form = {
+    querySelector: () => null,
+    querySelectorAll: (selector) => selector === 'input[type="file"]' ? [input] : []
+  };
   const editor = { closest: () => form };
   const document = {
     querySelector: (selector) => selector.includes('data-chatgptcli-file-input') ? input : editor,
     querySelectorAll: (selector) => {
+      if (selector === 'img[src], canvas') return [];
       if (selector === '[data-chatgptcli-file-input="1"]') {
         return Object.hasOwn(attributes, 'data-chatgptcli-file-input') ? [input] : [];
       }
@@ -322,7 +361,15 @@ function fallbackPage() {
         delete window.__chatgptcliFileChunks;
         return true;
       }
-      if (script.includes('const names =')) return true;
+      if (script.includes('const names =')) return previews;
+      if (script.includes('const tiles = form ? Array.from')) {
+        return {
+          url: 'https://chatgpt.com/', fileInputs: 1, markedInputFiles: input.files.length,
+          tiles: 0, largeImages: 0, uploading: 0,
+          send: { found: false, disabled: false, testId: '', ariaLabel: '' },
+          stop: false, editorChars: 0, userMessages: 0, alert: ''
+        };
+      }
       if (script.includes('dataset.chatgptcliAssigned')) page.assignScript = script;
       return Function('document', 'window', 'DataTransfer', 'File', 'atob', 'Event', `return ${script}`)(
         document,
@@ -330,7 +377,7 @@ function fallbackPage() {
         FakeDataTransfer,
         FakeFile,
         atob,
-        class FakeEvent {}
+        class FakeEvent { constructor(type) { this.type = type; } }
       );
     }
   };

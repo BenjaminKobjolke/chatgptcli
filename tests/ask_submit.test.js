@@ -106,6 +106,7 @@ describe('ask submit verification', () => {
     expect(result.response).toContain('composer still holds the prompt');
     expect(result.response).toContain('https://chatgpt.com/');
     expect(result.response).toContain('profile-42');
+    expect(result.response).toContain('composer:');
     expect(page.calls.enter).toBe(1);
   });
 

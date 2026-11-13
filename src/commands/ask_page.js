@@ -12,6 +12,7 @@ import {
   summarizeSurfaceIssue
 } from './chatgpt_surface.js';
 import { attachImages, UPLOAD_TIMEOUT_MS, waitForSendReady } from './ask_upload.js';
+import { formatComposerState, readComposerState } from './ask_composer_state.js';
 
 const RETRYABLE_PREFIXES = ['[BLOCKED]', '[NO RESPONSE]', '[SEND FAILED]', '[SUBMIT FAILED]', '[UPLOAD FAILED]'];
 const BLOCKED_PREFIX = '[BLOCKED]';
@@ -34,9 +35,11 @@ export async function askOnPage(page, input) {
 
   const { baselineKeys, baselineUserCount } = await captureAssistantBaseline(page);
   const images = Array.isArray(input.images) ? input.images : [];
+  let uploadPath = 'none';
   if (images.length) {
     const upload = await attachImages(page, images);
     if (!upload.ok) return { response: `${UPLOAD_FAILED_PREFIX} ${upload.reason}` };
+    uploadPath = upload.uploadPath || 'none';
   }
 
   const sendResult = await injectAndSend(page, input.prompt, { hasImages: images.length > 0 });
@@ -46,8 +49,9 @@ export async function askOnPage(page, input) {
     }
     if (sendResult.submitFailed) {
       const profile = input.profile || 'bridge default';
+      const composerState = await readComposerState(page, { uploadPath });
       return withChatUrl(page, {
-        response: `${SUBMIT_FAILED_PREFIX} Prompt typed but send did not start (check: ${sendResult.check}; tab: ${sendResult.url}; profile: ${profile})`
+        response: `${SUBMIT_FAILED_PREFIX} Prompt typed but send did not start (check: ${sendResult.check}; tab: ${sendResult.url}; profile: ${profile}); composer: ${formatComposerState(composerState)}`
       });
     }
     return withChatUrl(page, { response: `${SEND_FAILED_PREFIX} ${sendResult.reason}` });
