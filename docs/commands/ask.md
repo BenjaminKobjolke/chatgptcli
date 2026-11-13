@@ -25,8 +25,9 @@ Uses the `chatgpt.com` web UI (via the opencli Browser Bridge), not the OpenAI A
 - Attempt 1 uses the current chat (unless `--new`); every retry falls back to a fresh chat.
 - Retries on `[BLOCKED]`, `[NO RESPONSE]`, `[SEND FAILED]`, `[SUBMIT FAILED]`, and `[UPLOAD FAILED]` results; anything else is final.
 - A `[SUBMIT FAILED]` result means the prompt was entered but neither the send click nor one Enter fallback started sending. It includes the failed check, tab URL, and browser profile. The CLI checks that ChatGPT accepted the prompt before it waits for an answer.
+- With `--new`, the CLI verifies that ChatGPT opened a chat-less page with no user messages before sending. If it still sees an existing chat after one extra navigation, it returns retryable `[SEND FAILED] fresh chat did not open (tab: <url>)` without sending the prompt.
 - Login state comes from ChatGPT's `/api/auth/session` response, not words on the page. A prompt or conversation mentioning login, sign in, or access denied cannot make a logged-in page look like a login or challenge screen.
-- JSON output includes the attempt plan for agent consumption.
+- JSON output includes the attempt plan and, when known, the chat `url` used for the last attempt. Use `chatgptcli read "<url>"` to read back the exact chat. Text output remains the bare response.
 - `--file` inlines the file as text (UTF-8 text files only, max 1 MB); a missing file or oversized file fails with `INPUT_INVALID`. No browser upload — the content is appended to the prompt in a `--- FILE: <name> ---` block.
 - `--image` uploads pictures to the current chat, or to a fresh chat with `--new`. The prompt is required. Missing files, unsupported types, files over 20 MB, more than 10 images, or an upload failure produce a clear error. Use `--image` for pictures; `--file` rejects image extensions and remains text-only.
 - `[UPLOAD FAILED]` is retryable. Images are uploaded through Chrome first and sent through the ChatGPT page if Chrome refuses. If the reason mentions `Allow access to file URLs`, turn on that switch for the OpenCLI extension in `chrome://extensions` (OpenCLI > Details), then retry; otherwise use the reported reason to diagnose the upload.
@@ -47,10 +48,13 @@ JSON result:
 {
   "ok": true,
   "response": "OK",
+  "url": "https://chatgpt.com/c/<id>",
   "attempts": 1,
   "plan": [{ "attempt": 1, "mode": "current-chat", "status": "success" }]
 }
 ```
+
+When `[SEND FAILED] fresh chat did not open` is returned, retry once with `--new --max-attempts 1`; if it fails again, report the tab URL from the message.
 
 ## Exit codes
 
