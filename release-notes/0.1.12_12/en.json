@@ -1,0 +1,10 @@
+{
+  "version": "0.1.12",
+  "build": 12,
+  "date": "2026-11-13",
+  "title": "Reliable image attach",
+  "notes": [
+    "ask --image now picks the image upload field when ChatGPT shows several file inputs.",
+    "Installed 0.1.11 executables now report UPDATE_REQUIRED and should be re-downloaded."
+  ]
+}
