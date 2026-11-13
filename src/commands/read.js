@@ -1,6 +1,6 @@
 import { mkdirSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { CHATGPT_ROOT_URL, CHAT_PATH_MARKER, SHARE_PATH_MARKER, isChatHost, isSharePath } from '../core/chatgpt_site.js';
+import { CHAT_PATH_MARKER, SHARE_PATH_MARKER, hardNavigate, isChatHost, isSharePath } from '../core/chatgpt_site.js';
 import { AppError, ERROR_CODE, EXIT_CODE } from '../core/errors.js';
 import { withSitePage } from '../../.omx/reference/opencli-app-kit/src/core/session.js';
 import { resolveBridgeProfile } from '../core/settings.js';
@@ -149,14 +149,8 @@ export function normalizeChatUrl(target) {
   return url.href;
 }
 
-// `page.goto` on a URL the tab is already sitting on is a no-op (no reload) —
-// confirmed live to leave a stale, already-open chat tab in a
-// broken DOM state (e.g. the "Files in chat" panel silently failing to
-// resolve). Navigating to a neutral URL first forces a real reload before
-// landing on the target, which fixed the flakiness in repeated live testing.
 async function navigateAndWaitForMessages(page, url) {
-  await page.goto(CHATGPT_ROOT_URL, { settleMs: 1000 });
-  await page.goto(url, { settleMs: 1500 });
+  await hardNavigate(page, url);
   // Waiting for the first message node is not enough: the page keeps mounting
   // turns for seconds afterwards, and scraping early silently truncates the
   // chat (confirmed live — a chat with 8 turns scraped as 5, losing every

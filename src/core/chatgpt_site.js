@@ -7,6 +7,16 @@ export const CHAT_PATH_MARKER = '/c/';
 export const SHARE_PATH_MARKER = '/share/';
 const CHAT_HOSTS = Object.freeze(['chatgpt.com', 'chat.openai.com']);
 
+// `page.goto` on a URL the tab is already sitting on is a no-op (no reload) —
+// confirmed live to leave a stale, already-open chat tab in a
+// broken DOM state (e.g. the "Files in chat" panel silently failing to
+// resolve). Navigating to a neutral URL first forces a real reload before
+// landing on the target, which fixed the flakiness in repeated live testing.
+export async function hardNavigate(page, url) {
+  await page.goto(CHATGPT_ROOT_URL, { settleMs: 1000 });
+  await page.goto(url, { settleMs: 1500 });
+}
+
 export function isChatHost(hostname) {
   return CHAT_HOSTS.includes(hostname) || hostname.endsWith('.chatgpt.com');
 }
