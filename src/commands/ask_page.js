@@ -1,6 +1,6 @@
 // The in-page half of `ask`: everything that drives or reads the chatgpt.com tab.
 // Retry policy and output rendering live in ask.js.
-import { CHATGPT_ROOT_URL, isChatHost, isChatPath } from '../core/chatgpt_site.js';
+import { CHATGPT_ROOT_URL, hardNavigate, isChatHost, isChatPath } from '../core/chatgpt_site.js';
 import { __test__ as responseHelpers, captureAssistantBaseline, waitForAssistantResponse } from './ask_response.js';
 import {
   EDITOR_SELECTOR,
@@ -12,7 +12,13 @@ import {
   summarizeSurfaceIssue
 } from './chatgpt_surface.js';
 import { attachImages, UPLOAD_TIMEOUT_MS, waitForSendReady } from './ask_upload.js';
-import { COMPOSER_IDLE_TIMEOUT_MS, formatComposerState, readComposerState, waitForComposerIdle } from './ask_composer_state.js';
+import {
+  COMPOSER_IDLE_TIMEOUT_MS,
+  COMPOSER_RELOAD_AFTER_MS,
+  formatComposerState,
+  readComposerState,
+  waitForComposerIdle
+} from './ask_composer_state.js';
 
 const RETRYABLE_PREFIXES = ['[BLOCKED]', '[NO RESPONSE]', '[SEND FAILED]', '[SUBMIT FAILED]', '[UPLOAD FAILED]'];
 const BLOCKED_PREFIX = '[BLOCKED]';
@@ -33,10 +39,21 @@ export async function askOnPage(page, input) {
     return blocked(summarizeSurfaceIssue(surface));
   }
 
-  const composerIdle = await waitForComposerIdle(page, COMPOSER_IDLE_TIMEOUT_MS);
+  let composerIdle = await waitForComposerIdle(page, COMPOSER_RELOAD_AFTER_MS);
+  let reloadedChat = false;
   if (!composerIdle.idle) {
+    const currentUrl = await page.evaluate('window.location.href').catch(() => '');
+    if (isChatPath(currentUrl)) {
+      await hardNavigate(page, currentUrl);
+      reloadedChat = true;
+      await waitForSurface(page, 8000);
+      composerIdle = await waitForComposerIdle(page, COMPOSER_IDLE_TIMEOUT_MS);
+    }
+  }
+  if (!composerIdle.idle) {
+    const reloadNote = reloadedChat ? ' after reloading the chat' : '';
     return withChatUrl(page, {
-      response: `${SEND_FAILED_PREFIX} previous reply is still generating (composer: ${formatComposerState(composerIdle.snapshot)})`
+      response: `${SEND_FAILED_PREFIX} previous reply is still generating${reloadNote} (composer: ${formatComposerState(composerIdle.snapshot)})`
     });
   }
 

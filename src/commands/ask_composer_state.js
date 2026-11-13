@@ -4,14 +4,16 @@ import {
   EDITOR_SELECTOR,
   SEND_SELECTOR,
   STOP_SELECTOR,
+  VISIBLE_STOP_EXPRESSION,
   USER_SELECTOR
 } from './chatgpt_surface.js';
 
 export const COMPOSER_IDLE_TIMEOUT_MS = 60_000;
+export const COMPOSER_RELOAD_AFTER_MS = 20_000;
 
 const IDLE_PROBE_SCRIPT = `(() => {
   const __chatgptcliIdleProbe = true;
-  return Boolean(document.querySelector(${JSON.stringify(STOP_SELECTOR)}));
+  return ${VISIBLE_STOP_EXPRESSION};
 })()`;
 
 const STATE_SCRIPT = `(() => {
@@ -29,6 +31,9 @@ const STATE_SCRIPT = `(() => {
     '[role="progressbar"], [aria-busy="true"], circle'
   )).length;
   const stop = document.querySelector(${JSON.stringify(STOP_SELECTOR)});
+  const stops = Array.from(document.querySelectorAll(${JSON.stringify(STOP_SELECTOR)}));
+  const visibleStop = stops.find((node) => node.getClientRects().length > 0) || null;
+  const diagnosticStop = visibleStop || stop;
   return {
     url: location.href,
     fileInputs: form ? form.querySelectorAll('input[type="file"]').length : 0,
@@ -43,7 +48,11 @@ const STATE_SCRIPT = `(() => {
       ariaLabel: send?.getAttribute('aria-label') || ''
     },
     stop: Boolean(stop),
-    stopLabel: (stop?.getAttribute('aria-label') || stop?.innerText || stop?.textContent || '').trim().replace(/[\\r\\n\\t]+/g, ' ').slice(0, 60),
+    stopLabel: (diagnosticStop?.getAttribute('aria-label') || diagnosticStop?.innerText || diagnosticStop?.textContent || '').trim().replace(/[\\r\\n\\t]+/g, ' ').slice(0, 60),
+    stopTestId: diagnosticStop?.getAttribute('data-testid') || '',
+    stopInForm: Boolean(diagnosticStop && form?.contains(diagnosticStop)),
+    stopVisible: Boolean(visibleStop),
+    stopMatches: stops.length,
     editorChars: editor instanceof HTMLElement ? (editor.innerText || '').length : 0,
     userMessages: document.querySelectorAll(${JSON.stringify(USER_SELECTOR)}).length,
     alert: (alertRegion?.innerText || alertRegion?.textContent || '').trim().slice(0, 160)
@@ -95,6 +104,10 @@ export function formatComposerState(state) {
     `ariaLabel=${quote(send.ariaLabel)}`,
     `stop=${Boolean(state?.stop)}`,
     `stopLabel=${quote(state?.stopLabel)}`,
+    `stopTestId=${quote(state?.stopTestId)}`,
+    `stopInForm=${Boolean(state?.stopInForm)}`,
+    `stopVisible=${Boolean(state?.stopVisible)}`,
+    `stopMatches=${numberOr(state?.stopMatches, 0)}`,
     `editorChars=${numberOr(state?.editorChars, 0)}`,
     `userMessages=${numberOr(state?.userMessages, 0)}`,
     `alert=${quote(state?.alert)}`,
@@ -120,6 +133,10 @@ function normalizeComposerState(value, uploadPath) {
     },
     stop: Boolean(state.stop),
     stopLabel: singleLine(state.stopLabel).slice(0, 60),
+    stopTestId: singleLine(state.stopTestId).slice(0, 60),
+    stopInForm: Boolean(state.stopInForm),
+    stopVisible: Boolean(state.stopVisible),
+    stopMatches: numberOr(state.stopMatches, 0),
     editorChars: numberOr(state.editorChars, 0),
     userMessages: numberOr(state.userMessages, 0),
     alert: stringOr(state.alert).trim().slice(0, 160),

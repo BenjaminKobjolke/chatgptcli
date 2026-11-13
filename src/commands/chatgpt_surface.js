@@ -5,6 +5,8 @@ export const EDITOR_SELECTOR = '.ProseMirror[role="textbox"]';
 export const SEND_SELECTOR = '[data-testid="send-button"], form button[type="submit"]';
 // Confirmed live mid-stream: the redesigned stop button has no testid.
 export const STOP_SELECTOR = '[data-testid="stop-button"], form button[aria-label^="Stop"]';
+export const VISIBLE_STOP_EXPRESSION = `Array.from(document.querySelectorAll(${JSON.stringify(STOP_SELECTOR)})
+  ).some((stop) => stop.getClientRects().length > 0)`;
 // The legacy role markup comes first, followed by redesigned content-search units.
 export const USER_SELECTOR = '[data-message-author-role="user"], [data-content-search-unit-key$=":user"]';
 export const COMPOSER_FILE_INPUT_SELECTOR = '[data-chatgptcli-file-input="1"]';

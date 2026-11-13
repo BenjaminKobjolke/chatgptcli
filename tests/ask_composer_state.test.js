@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test';
+import { VISIBLE_STOP_EXPRESSION } from '../src/commands/chatgpt_surface.js';
 import { formatComposerState, readComposerState, waitForComposerIdle } from '../src/commands/ask_composer_state.js';
 
 describe('ask composer state', () => {
@@ -13,11 +14,30 @@ describe('ask composer state', () => {
       send: { found: true, disabled: false, testId: 'send-button', ariaLabel: 'Send' },
       stop: false,
       stopLabel: '',
+      stopTestId: '',
+      stopInForm: false,
+      stopVisible: false,
+      stopMatches: 0,
       editorChars: 8,
       userMessages: 1,
       alert: '',
       uploadPath: 'native'
-    })).toBe('url=https://chatgpt.com/c/123 fileInputs=2 markedInputFiles=3 tiles=3 largeImages=3 uploading=0 send=ready testId=send-button ariaLabel="Send" stop=false stopLabel="" editorChars=8 userMessages=1 alert="" uploadPath=native');
+    })).toBe('url=https://chatgpt.com/c/123 fileInputs=2 markedInputFiles=3 tiles=3 largeImages=3 uploading=0 send=ready testId=send-button ariaLabel="Send" stop=false stopLabel="" stopTestId="" stopInForm=false stopVisible=false stopMatches=0 editorChars=8 userMessages=1 alert="" uploadPath=native');
+  });
+
+  test('counts only rendered stop controls as visible', () => {
+    const controls = [
+      { getClientRects: () => [] },
+      { getClientRects: () => [{ width: 1, height: 1 }] }
+    ];
+    const result = Function('document', `return ${VISIBLE_STOP_EXPRESSION}`)({
+      querySelectorAll: () => controls
+    });
+
+    expect(result).toBe(true);
+    expect(Function('document', `return ${VISIBLE_STOP_EXPRESSION}`)({
+      querySelectorAll: () => [controls[0]]
+    })).toBe(false);
   });
 
   test('waits until the stop button disappears', async () => {
@@ -88,6 +108,18 @@ describe('ask composer state', () => {
     expect(formatComposerState(state)).toContain(`stopLabel="${'x'.repeat(60)}"`);
   });
 
+  test('uses the visible stop control for all stop diagnostics', async () => {
+    let stateScript = '';
+    await readComposerState({
+      evaluate: async (script) => {
+        stateScript = script;
+        return {};
+      }
+    });
+
+    expect(stateScript).toContain("stopLabel: (diagnosticStop?.getAttribute('aria-label')");
+  });
+
   test('returns a safe error result when page evaluation throws', async () => {
     const result = await readComposerState({
       evaluate: async () => { throw new Error('probe unavailable'); }
@@ -107,6 +139,10 @@ describe('ask composer state', () => {
         uploading: 1,
         send: { found: true, disabled: false, testId: 'send-button', ariaLabel: 'Send', text: 'private button copy' },
         stop: false,
+        stopTestId: 'stop-button',
+        stopInForm: true,
+        stopVisible: true,
+        stopMatches: 2,
         editorChars: 12,
         userMessages: 4,
         alert: '  Upload failed.  ',
@@ -125,10 +161,40 @@ describe('ask composer state', () => {
       send: { found: true, disabled: false, testId: 'send-button', ariaLabel: 'Send' },
       stop: false,
       stopLabel: '',
+      stopTestId: 'stop-button',
+      stopInForm: true,
+      stopVisible: true,
+      stopMatches: 2,
       editorChars: 12,
       userMessages: 4,
       alert: 'Upload failed.',
       uploadPath: 'native'
     });
+  });
+
+  test('uses safe defaults for missing stop diagnostics', async () => {
+    const state = await readComposerState({ evaluate: async () => ({ stop: true }) });
+
+    expect(state.stopTestId).toBe('');
+    expect(state.stopInForm).toBe(false);
+    expect(state.stopVisible).toBe(false);
+    expect(state.stopMatches).toBe(0);
+  });
+
+  test('normalizes stop diagnostics and caps the test id at 60 characters', async () => {
+    const state = await readComposerState({
+      evaluate: async () => ({
+        stopTestId: 'x'.repeat(80),
+        stopInForm: 1,
+        stopVisible: true,
+        stopMatches: '3'
+      })
+    });
+
+    expect(state.stopTestId).toBe('x'.repeat(60));
+    expect(state.stopInForm).toBe(true);
+    expect(state.stopVisible).toBe(true);
+    expect(state.stopMatches).toBe(3);
+    expect(formatComposerState(state)).toContain(`stopTestId="${'x'.repeat(60)}" stopInForm=true stopVisible=true stopMatches=3`);
   });
 });
