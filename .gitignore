@@ -1,5 +1,5 @@
 node_modules
-chatgptcli.exe
+chatgptcli*.exe
 *.log
 .DS_Store
 .omx
