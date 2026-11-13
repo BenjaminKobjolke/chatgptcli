@@ -2,6 +2,7 @@
 import { readFileSync } from 'node:fs';
 import { basename, extname } from 'node:path';
 import { IMAGE_MIME_TYPES } from '../core/prompt_images.js';
+import { STOP_SELECTOR } from './chatgpt_surface.js';
 
 const CHUNK_BYTES = 192 * 1024;
 
@@ -60,6 +61,7 @@ function buildAssignScript(files, selector) {
     files.forEach((file) => transfer.items.add(file));
     input.files = transfer.files;
     input.dataset.chatgptcliAssigned = '1';
+    const busyAtAssign = Boolean(document.querySelector(${JSON.stringify(STOP_SELECTOR)}));
     const snapshotInput = () => ({
       connected: Boolean(input.isConnected),
       marked: input.getAttribute('data-chatgptcli-file-input') === '1',
@@ -72,7 +74,7 @@ function buildAssignScript(files, selector) {
     const handlerSource = handlerFound ? Function.prototype.toString.call(onChange) : '';
     const handlerInspection = {
       readsFiles: handlerSource.includes('.files'),
-      clearsValue: handlerSource.includes('.value =')
+      clearsValue: /\\.value\\s*=(?!=)/.test(handlerSource)
     };
     stages.handlerEntry = snapshotInput();
     const dispatchPath = handlerFound ? 'react' : 'events';
@@ -91,6 +93,7 @@ function buildAssignScript(files, selector) {
     return {
       ok: true,
       assignmentState: {
+        busyAtAssign,
         handlerFound,
         dispatchPath,
         handlerInspection,

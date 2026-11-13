@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { attachImages } from '../src/commands/ask_upload.js';
 import { askOnPage, shouldRetry } from '../src/commands/ask_page.js';
+import { STOP_SELECTOR } from '../src/commands/chatgpt_surface.js';
 
 const tempDirectories = [];
 
@@ -26,6 +27,10 @@ function fakePage({ inputFound = true, previews = true, readyAt = 3, bridge = tr
     evaluate: async (script) => {
       if (script.includes('/api/auth/session')) {
         return { url: 'https://chatgpt.com/', editorFound: true, sendFound: true, loggedIn: true };
+      }
+      if (script.includes('__chatgptcliIdleProbe')) {
+        calls.push('idleProbe');
+        return false;
       }
       if (script.includes('delete window.__chatgptcliFileChunks')) {
         calls.push(['cleanup', script]);
@@ -125,8 +130,37 @@ describe('ask image uploads', () => {
     const result = await askOnPage(page, { prompt: 'Review these', images: ['a.png', 'b.jpg'], timeoutMs: 1000, newChat: true });
     expect(result.response).toBe('Here is the answer.');
     expect(page.calls.find((call) => Array.isArray(call) && call[0] === 'setFileInput')).toEqual(['setFileInput', ['a.png', 'b.jpg'], '[data-chatgptcli-file-input="1"]']);
+    expect(page.calls.indexOf('idleProbe')).toBeLessThan(page.calls.indexOf('findFileInput'));
     expect(page.calls.indexOf('findFileInput')).toBeLessThan(page.calls.indexOf('insertText'));
     expect(page.calls.filter((call) => call === 'sendReady')).toHaveLength(3);
+  });
+
+  test('does not attach or type when the previous reply is still generating', async () => {
+    const originalNow = Date.now;
+    let now = 0;
+    Date.now = () => now++ * 1000;
+    const page = fakePage();
+    const evaluate = page.evaluate;
+    page.evaluate = async (script) => {
+      if (script.includes('__chatgptcliIdleProbe')) return true;
+      if (script.includes('const largeImages')) {
+        return { url: 'https://chatgpt.com/c/123', stop: true, stopLabel: 'Stop generating' };
+      }
+      return evaluate(script);
+    };
+    try {
+      const result = await askOnPage(page, {
+        prompt: 'Review this', images: ['a.png'], timeoutMs: 1000, newChat: true
+      });
+
+      expect(result.response).toStartWith('[SEND FAILED] previous reply is still generating');
+      expect(result.response).toContain('composer:');
+      expect(result.response).toContain('stop=true stopLabel="Stop generating"');
+      expect(page.calls).not.toContain('findFileInput');
+      expect(page.calls).not.toContain('insertText');
+    } finally {
+      Date.now = originalNow;
+    }
   });
 
   test('reports when the composer has no file input', async () => {
@@ -213,7 +247,18 @@ describe('ask image uploads', () => {
 
     expect(result.reason).toContain('handlerFound=true dispatchPath=react');
     expect(result.reason).toContain('handlerReadsFiles=true handlerClearsValue=true handlerError=none');
+    expect(result.reason).toContain('busyAtAssign=false');
     expect(result.reason).toContain('stages=assigned:connected/present/1,handlerEntry:connected/present/1,handlerExit:connected/present/1,afterHandlerReturn:connected/present/1');
+  });
+
+  test('detects a minified React handler that clears the input value', async () => {
+    const imagePath = createTempImage('minified.png', Buffer.from('image'));
+    const page = fallbackPage({ previews: false, reactHandler: 'minified' });
+
+    const result = await attachImages(page, [imagePath]);
+
+    expect(result.reason).toContain('handlerClearsValue=true');
+    expect(result.reason).toContain('busyAtAssign=false');
   });
 
   test('does not fall back for unrelated bridge errors', async () => {
@@ -313,10 +358,12 @@ function fallbackPage({ previews = true, clearFilesOnChange = false, reactHandle
     }
   };
   if (reactHandler) {
-    input.__reactProps$test = { onChange: (event) => {
-      void event.target.files;
-      event.target.value = '';
-    } };
+    input.__reactProps$test = { onChange: reactHandler === 'minified'
+      ? new Function('event', 'event.target.files;event.target.value=""')
+      : (event) => {
+        void event.target.files;
+        event.target.value = '';
+      } };
   }
   const form = {
     querySelector: () => null,
@@ -324,7 +371,9 @@ function fallbackPage({ previews = true, clearFilesOnChange = false, reactHandle
   };
   const editor = { closest: () => form };
   const document = {
-    querySelector: (selector) => selector.includes('data-chatgptcli-file-input') ? input : editor,
+    querySelector: (selector) => selector === STOP_SELECTOR
+      ? null
+      : selector.includes('data-chatgptcli-file-input') ? input : editor,
     querySelectorAll: (selector) => {
       if (selector === 'img[src], canvas') return [];
       if (selector === '[data-chatgptcli-file-input="1"]') {

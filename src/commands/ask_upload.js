@@ -107,7 +107,7 @@ function formatAssignmentState(state) {
   const stages = Object.entries(state.stages || {})
     .map(([name, snapshot]) => `${name}:${formatInputSnapshot(snapshot)}`)
     .join(',');
-  return `assignmentAfterChange=${afterChange} handlerFound=${Boolean(state.handlerFound)} dispatchPath=${state.dispatchPath || 'unknown'} handlerReadsFiles=${Boolean(inspection.readsFiles)} handlerClearsValue=${Boolean(inspection.clearsValue)} handlerError=${state.handlerError || 'none'} stages=${stages}`;
+  return `assignmentAfterChange=${afterChange} busyAtAssign=${Boolean(state.busyAtAssign)} handlerFound=${Boolean(state.handlerFound)} dispatchPath=${state.dispatchPath || 'unknown'} handlerReadsFiles=${Boolean(inspection.readsFiles)} handlerClearsValue=${Boolean(inspection.clearsValue)} handlerError=${state.handlerError || 'none'} stages=${stages}`;
 }
 
 function formatInputSnapshot(state) {
