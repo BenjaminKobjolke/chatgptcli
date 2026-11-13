@@ -12,7 +12,7 @@ import {
   summarizeSurfaceIssue
 } from './chatgpt_surface.js';
 import { attachImages, UPLOAD_TIMEOUT_MS, waitForSendReady } from './ask_upload.js';
-import { formatComposerState, readComposerState } from './ask_composer_state.js';
+import { COMPOSER_IDLE_TIMEOUT_MS, formatComposerState, readComposerState, waitForComposerIdle } from './ask_composer_state.js';
 
 const RETRYABLE_PREFIXES = ['[BLOCKED]', '[NO RESPONSE]', '[SEND FAILED]', '[SUBMIT FAILED]', '[UPLOAD FAILED]'];
 const BLOCKED_PREFIX = '[BLOCKED]';
@@ -31,6 +31,13 @@ export async function askOnPage(page, input) {
   }
   if (!surface.editorReady || surface.loginLike || surface.challengeLike) {
     return blocked(summarizeSurfaceIssue(surface));
+  }
+
+  const composerIdle = await waitForComposerIdle(page, COMPOSER_IDLE_TIMEOUT_MS);
+  if (!composerIdle.idle) {
+    return withChatUrl(page, {
+      response: `${SEND_FAILED_PREFIX} previous reply is still generating (composer: ${formatComposerState(composerIdle.snapshot)})`
+    });
   }
 
   const { baselineKeys, baselineUserCount } = await captureAssistantBaseline(page);

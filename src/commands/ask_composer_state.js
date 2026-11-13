@@ -7,6 +7,13 @@ import {
   USER_SELECTOR
 } from './chatgpt_surface.js';
 
+export const COMPOSER_IDLE_TIMEOUT_MS = 60_000;
+
+const IDLE_PROBE_SCRIPT = `(() => {
+  const __chatgptcliIdleProbe = true;
+  return Boolean(document.querySelector(${JSON.stringify(STOP_SELECTOR)}));
+})()`;
+
 const STATE_SCRIPT = `(() => {
   const editor = document.querySelector(${JSON.stringify(EDITOR_SELECTOR)});
   const form = editor?.closest('form');
@@ -21,6 +28,7 @@ const STATE_SCRIPT = `(() => {
   const uploading = tiles.filter((tile) => tile.querySelector(
     '[role="progressbar"], [aria-busy="true"], circle'
   )).length;
+  const stop = document.querySelector(${JSON.stringify(STOP_SELECTOR)});
   return {
     url: location.href,
     fileInputs: form ? form.querySelectorAll('input[type="file"]').length : 0,
@@ -34,12 +42,32 @@ const STATE_SCRIPT = `(() => {
       testId: send?.getAttribute('data-testid') || '',
       ariaLabel: send?.getAttribute('aria-label') || ''
     },
-    stop: Boolean(document.querySelector(${JSON.stringify(STOP_SELECTOR)})),
+    stop: Boolean(stop),
+    stopLabel: (stop?.getAttribute('aria-label') || stop?.innerText || stop?.textContent || '').trim().replace(/[\\r\\n\\t]+/g, ' ').slice(0, 60),
     editorChars: editor instanceof HTMLElement ? (editor.innerText || '').length : 0,
     userMessages: document.querySelectorAll(${JSON.stringify(USER_SELECTOR)}).length,
     alert: (alertRegion?.innerText || alertRegion?.textContent || '').trim().slice(0, 160)
   };
 })()`;
+
+export async function waitForComposerIdle(page, timeoutMs = COMPOSER_IDLE_TIMEOUT_MS) {
+  const startedAt = Date.now();
+
+  while (true) {
+    let busy;
+    try {
+      busy = await page.evaluate(IDLE_PROBE_SCRIPT);
+    } catch {
+      return { idle: true };
+    }
+
+    if (!busy) return { idle: true };
+    if (Date.now() - startedAt >= timeoutMs) {
+      return { idle: false, snapshot: await readComposerState(page) };
+    }
+    await page.wait(1);
+  }
+}
 
 export async function readComposerState(page, { uploadPath = 'none' } = {}) {
   try {
@@ -66,6 +94,7 @@ export function formatComposerState(state) {
     `testId=${singleLine(send.testId)}`,
     `ariaLabel=${quote(send.ariaLabel)}`,
     `stop=${Boolean(state?.stop)}`,
+    `stopLabel=${quote(state?.stopLabel)}`,
     `editorChars=${numberOr(state?.editorChars, 0)}`,
     `userMessages=${numberOr(state?.userMessages, 0)}`,
     `alert=${quote(state?.alert)}`,
@@ -90,6 +119,7 @@ function normalizeComposerState(value, uploadPath) {
       ariaLabel: stringOr(send.ariaLabel)
     },
     stop: Boolean(state.stop),
+    stopLabel: singleLine(state.stopLabel).slice(0, 60),
     editorChars: numberOr(state.editorChars, 0),
     userMessages: numberOr(state.userMessages, 0),
     alert: stringOr(state.alert).trim().slice(0, 160),

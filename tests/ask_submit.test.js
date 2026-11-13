@@ -41,6 +41,7 @@ function fakePage({ loggedIn = true, submitted = true } = {}) {
       entered = true;
     },
     evaluate: async (script) => {
+      if (script.includes('__chatgptcliIdleProbe')) return false;
       if (script.includes('/api/auth/session')) {
         return {
           url: 'https://chatgpt.com/', editorFound: true, sendFound: true,
