@@ -1,6 +1,6 @@
 {
   "name": "chatgptcli",
-  "version": "0.1.12",
+  "version": "0.1.13",
   "description": "Web-backed ChatGPT CLI via opencli Browser Bridge",
   "type": "module",
   "bin": {
