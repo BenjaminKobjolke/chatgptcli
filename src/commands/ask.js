@@ -1,7 +1,8 @@
 import { AppError, ERROR_CODE, EXIT_CODE } from '../core/errors.js';
 import { withSitePage } from '../../.omx/reference/opencli-app-kit/src/core/session.js';
 import { resolveBridgeProfile } from '../core/settings.js';
-import { askOnPage, isSuccessfulResponse, normalizeResponse, shouldRetry } from './ask_page.js';
+import { askOnPage, isSuccessfulResponse, shouldRetry } from './ask_page.js';
+import { normalizeResponse } from './ask_response.js';
 
 let browserAskRunner = runBrowserAsk;
 let sleepImpl = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -35,6 +36,7 @@ export async function runAsk(input) {
 
   const plan = [];
   let lastResponse = '';
+  let lastUrl;
 
   for (let attempt = 1; attempt <= input.maxAttempts; attempt += 1) {
     const mode = (input.newChat || attempt > 1) ? 'fresh-chat' : 'current-chat';
@@ -47,12 +49,13 @@ export async function runAsk(input) {
 
     const response = normalizeResponse(result.response);
     lastResponse = response || lastResponse;
+    lastUrl = typeof result.url === 'string' && result.url ? result.url : undefined;
 
     if (isSuccessfulResponse(response)) {
       plan.push({ attempt, mode, status: 'success' });
       return {
         exitCode: EXIT_CODE.SUCCESS,
-        output: renderResult({ ok: true, response, attempts: attempt, plan }, input.format)
+        output: renderResult({ ok: true, response, attempts: attempt, plan, ...(lastUrl ? { url: lastUrl } : {}) }, input.format)
       };
     }
 
@@ -68,7 +71,7 @@ export async function runAsk(input) {
     if (!retryable || attempt === input.maxAttempts) {
       return {
         exitCode: EXIT_CODE.GENERIC,
-        output: renderResult({ ok: false, response: lastResponse || null, attempts: attempt, plan }, input.format)
+        output: renderResult({ ok: false, response: lastResponse || null, attempts: attempt, plan, ...(lastUrl ? { url: lastUrl } : {}) }, input.format)
       };
     }
 
@@ -77,7 +80,7 @@ export async function runAsk(input) {
 
   return {
     exitCode: EXIT_CODE.GENERIC,
-    output: renderResult({ ok: false, response: lastResponse || null, attempts: input.maxAttempts, plan }, input.format)
+    output: renderResult({ ok: false, response: lastResponse || null, attempts: input.maxAttempts, plan, ...(lastUrl ? { url: lastUrl } : {}) }, input.format)
   };
 }
 

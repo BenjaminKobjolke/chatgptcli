@@ -21,7 +21,7 @@ afterEach(() => {
 describe('cli ask', () => {
   test('ask returns structured success output', async () => {
     __setAskDepsForTest({
-      browserAskRunner: async () => ({ response: 'OK' }),
+      browserAskRunner: async () => ({ response: 'OK', url: 'https://chatgpt.com/c/x' }),
       sleep: async () => {}
     });
 
@@ -31,7 +31,34 @@ describe('cli ask', () => {
     expect(code).toBe(0);
     expect(stdout.join('')).toContain('"ok": true');
     expect(stdout.join('')).toContain('"response": "OK"');
+    expect(stdout.join('')).toContain('"url": "https://chatgpt.com/c/x"');
     expect(stdout.join('')).toContain('"mode": "fresh-chat"');
+  });
+
+  test('text format stays the bare response when the browser returns a chat URL', async () => {
+    __setAskDepsForTest({ browserAskRunner: async () => ({ response: 'OK', url: 'https://chatgpt.com/c/x' }) });
+    const stdout = captureStdout();
+
+    const code = await runCli(['ask', 'hello', '-f', 'text']);
+
+    expect(code).toBe(0);
+    expect(stdout.join('')).toBe('OK\n');
+  });
+
+  test('failed JSON output keeps the last known chat URL', async () => {
+    __setAskDepsForTest({
+      browserAskRunner: async () => ({
+        response: '[SEND FAILED] fresh chat did not open (tab: https://chatgpt.com/c/old)',
+        url: 'https://chatgpt.com/c/old'
+      }),
+      sleep: async () => {}
+    });
+    const stdout = captureStdout();
+
+    const code = await runCli(['ask', 'hello', '--max-attempts', '1', '-f', 'json']);
+
+    expect(code).toBe(1);
+    expect(stdout.join('')).toContain('"url": "https://chatgpt.com/c/old"');
   });
 
   test('ask retries blocked result and succeeds on second attempt', async () => {

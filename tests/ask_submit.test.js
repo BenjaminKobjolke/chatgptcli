@@ -46,6 +46,18 @@ function fakePage({ loggedIn = true, submitted = true } = {}) {
           sendDisabled: false, loggedIn, challengeLike: false
         };
       }
+      if (script.includes('const assistants')) {
+        if (script.includes('sign in')) {
+          return { assistants: [], streaming: false, userMessageCount: 0, loginLike: true, challengeLike: false };
+        }
+        return {
+          assistants: clicked ? [{ key: 'new', text: 'Here is the answer.' }] : [],
+          streaming: false,
+          userMessageCount: clicked ? 1 : 0,
+          loginLike: false,
+          challengeLike: false
+        };
+      }
       if (script.includes('data-message-author-role') && script.includes('user')) {
         if (script.includes('sendReady')) {
           return { editorText: 'long prompt remains', sendReady: true, userMessageCount: 0 };
@@ -65,17 +77,6 @@ function fakePage({ loggedIn = true, submitted = true } = {}) {
       if (script.includes('editor.focus()')) return { ok: true };
       if (script.includes('editorText')) {
         return { editorText: 'long prompt remains', sendReady: true };
-      }
-      if (script.includes('const assistants')) {
-        if (script.includes('sign in')) {
-          return { assistants: [], streaming: false, loginLike: true, challengeLike: false };
-        }
-        return {
-          assistants: clicked ? [{ key: 'new', text: 'Here is the answer.' }] : [],
-          streaming: false,
-          loginLike: false,
-          challengeLike: false
-        };
       }
       if (script.includes('data-chatgpt-selection-message-id')) return [];
       return { url: 'https://chatgpt.com/', editorFound: true, sendFound: true, sendDisabled: false, loggedIn };

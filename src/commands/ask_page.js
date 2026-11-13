@@ -1,6 +1,7 @@
 // The in-page half of `ask`: everything that drives or reads the chatgpt.com tab.
 // Retry policy and output rendering live in ask.js.
-import { CHATGPT_ROOT_URL, isChatHost } from '../core/chatgpt_site.js';
+import { CHATGPT_ROOT_URL, isChatHost, isChatPath } from '../core/chatgpt_site.js';
+import { __test__ as responseHelpers, captureAssistantBaseline, waitForAssistantResponse } from './ask_response.js';
 import {
   EDITOR_SELECTOR,
   SEND_SELECTOR,
@@ -12,27 +13,26 @@ import {
 } from './chatgpt_surface.js';
 import { attachImages, UPLOAD_TIMEOUT_MS, waitForSendReady } from './ask_upload.js';
 
-const ASSISTANT_SELECTOR = '[data-message-author-role="assistant"], [data-content-search-unit-key$=":assistant"] [data-chatgpt-selection-message-id]';
-// In-page: every mounted assistant reply as { key, text }, keyed by message id so it survives a re-mount.
-const ASSISTANTS_EXPRESSION = `Array.from(document.querySelectorAll(${JSON.stringify(ASSISTANT_SELECTOR)}))
-  .map((node) => {
-    const text = ((node instanceof HTMLElement ? node.innerText : node.textContent) || '').trim();
-    return { key: node.getAttribute('data-chatgpt-selection-message-id') || node.getAttribute('data-message-id') || text, text };
-  })
-  .filter((entry) => entry.text)`;
 const RETRYABLE_PREFIXES = ['[BLOCKED]', '[NO RESPONSE]', '[SEND FAILED]', '[SUBMIT FAILED]', '[UPLOAD FAILED]'];
 const BLOCKED_PREFIX = '[BLOCKED]';
-const NO_RESPONSE_PREFIX = '[NO RESPONSE]';
 const SEND_FAILED_PREFIX = '[SEND FAILED]';
 const SUBMIT_FAILED_PREFIX = '[SUBMIT FAILED]';
 const UPLOAD_FAILED_PREFIX = '[UPLOAD FAILED]';
+const FRESH_CHAT_FAILED_MESSAGE = 'fresh chat did not open';
 export async function askOnPage(page, input) {
-  let surface = await ensureReadySurface(page, input.newChat);
+  const readiness = await ensureReadySurface(page, input.newChat);
+  let surface = readiness.surface;
+  if (readiness.freshChatIssue) {
+    return {
+      response: `${SEND_FAILED_PREFIX} ${FRESH_CHAT_FAILED_MESSAGE} (tab: ${readiness.freshChatIssue.url})`,
+      url: readiness.freshChatIssue.url
+    };
+  }
   if (!surface.editorReady || surface.loginLike || surface.challengeLike) {
     return blocked(summarizeSurfaceIssue(surface));
   }
 
-  const baselineKeys = new Set(normalizeAssistants(await page.evaluate(ASSISTANTS_EXPRESSION)).map((entry) => entry.key));
+  const { baselineKeys, baselineUserCount } = await captureAssistantBaseline(page);
   const images = Array.isArray(input.images) ? input.images : [];
   if (images.length) {
     const upload = await attachImages(page, images);
@@ -46,29 +46,35 @@ export async function askOnPage(page, input) {
     }
     if (sendResult.submitFailed) {
       const profile = input.profile || 'bridge default';
-      return {
+      return withChatUrl(page, {
         response: `${SUBMIT_FAILED_PREFIX} Prompt typed but send did not start (check: ${sendResult.check}; tab: ${sendResult.url}; profile: ${profile})`
-      };
+      });
     }
-    return { response: `${SEND_FAILED_PREFIX} ${sendResult.reason}` };
+    return withChatUrl(page, { response: `${SEND_FAILED_PREFIX} ${sendResult.reason}` });
   }
 
   const result = await waitForAssistantResponse(page, {
     prompt: input.prompt,
     timeoutMs: input.timeoutMs,
-    baselineKeys
+    baselineKeys,
+    baselineUserCount
   });
 
   if (isSuccessfulResponse(result.response)) {
-    return result;
+    return withChatUrl(page, result);
   }
 
   surface = await probeChatGptSurface(page);
   if (surface.loginLike || surface.challengeLike) {
-    return blocked(summarizeSurfaceIssue(surface));
+    return withChatUrl(page, blocked(summarizeSurfaceIssue(surface)));
   }
 
-  return result;
+  return withChatUrl(page, result);
+}
+
+async function withChatUrl(page, result) {
+  const url = await page.evaluate('window.location.href').catch(() => '');
+  return isChatPath(url) ? { ...result, url } : result;
 }
 
 async function ensureReadySurface(page, newChat) {
@@ -85,7 +91,32 @@ async function ensureReadySurface(page, newChat) {
     surface = await waitForSurface(page, 8000);
   }
 
-  return surface;
+  if (!newChat) return { surface };
+
+  let freshChat = await inspectFreshChat(page);
+  if (isChatPath(freshChat.url) || freshChat.userMessageCount > 0) {
+    await page.goto(CHATGPT_ROOT_URL, { settleMs: 1500 });
+    await page.wait(2);
+    surface = await waitForSurface(page, 8000);
+    freshChat = await inspectFreshChat(page);
+  }
+
+  if (isChatPath(freshChat.url) || freshChat.userMessageCount > 0) {
+    return { surface, freshChatIssue: freshChat };
+  }
+
+  return { surface };
+}
+
+async function inspectFreshChat(page) {
+  const state = await page.evaluate(`(() => ({
+    url: window.location.href,
+    userMessageCount: document.querySelectorAll(${JSON.stringify(USER_SELECTOR)}).length
+  }))()`);
+  return {
+    url: typeof state?.url === 'string' ? state.url : '',
+    userMessageCount: Number(state?.userMessageCount) || 0
+  };
 }
 
 async function waitForSurface(page, timeoutMs) {
@@ -199,33 +230,6 @@ async function waitForSubmitStart(page, baselineUserMessageCount) {
   return { started: false, url: typeof latest?.url === 'string' ? latest.url : '' };
 }
 
-async function waitForAssistantResponse(page, input) {
-  const startedAt = Date.now();
-  let lastResponse = '';
-
-  while (Date.now() - startedAt < input.timeoutMs) {
-    await page.wait(2);
-    const probe = await page.evaluate(`(() => {
-      const assistants = ${ASSISTANTS_EXPRESSION};
-      const streaming = Boolean(document.querySelector(${JSON.stringify(STOP_SELECTOR)}));
-      return {
-        assistants,
-        streaming
-      };
-    })()`);
-
-    const response = pickLatestAssistantCandidate(probe.assistants, input.baselineKeys, input.prompt);
-    // The stop selector has drifted before, so a reply must also hold still for one full poll.
-    if (response && !probe.streaming && response === lastResponse) {
-      return { response };
-    }
-    lastResponse = response || lastResponse;
-
-  }
-
-  return { response: lastResponse || NO_RESPONSE_PREFIX };
-}
-
 async function isOnChatGpt(page) {
   const url = await page.evaluate('window.location.href').catch(() => '');
   if (typeof url !== 'string' || !url) return false;
@@ -241,29 +245,6 @@ function blocked(message) {
   return { response: `${BLOCKED_PREFIX} ${message}` };
 }
 
-export function normalizeResponse(value) {
-  return typeof value === 'string' ? value.trim() : '';
-}
-
-function normalizeAssistants(value) {
-  return (Array.isArray(value) ? value : [])
-    .map((entry) => ({ key: String(entry?.key ?? ''), text: normalizeResponse(entry?.text) }))
-    .filter((entry) => entry.text);
-}
-
-function pickLatestAssistantCandidate(assistants, baselineKeys, prompt) {
-  const normalizedPrompt = normalizeResponse(prompt);
-  const fresh = normalizeAssistants(assistants).filter((entry) => !baselineKeys.has(entry.key));
-
-  for (let i = fresh.length - 1; i >= 0; i -= 1) {
-    if (fresh[i].text !== normalizedPrompt) {
-      return fresh[i].text;
-    }
-  }
-
-  return '';
-}
-
 export function isSuccessfulResponse(response) {
   return Boolean(response) && !RETRYABLE_PREFIXES.some((prefix) => response.startsWith(prefix));
 }
@@ -274,8 +255,7 @@ export function shouldRetry(response) {
 
 export const __test__ = {
   isOnChatGpt,
-  pickLatestAssistantCandidate,
-  waitForAssistantResponse,
+  ...responseHelpers,
   probeChatGptSurface,
   normalizeSurfaceState,
   summarizeSurfaceIssue

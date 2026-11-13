@@ -44,13 +44,21 @@ function fakePage({ inputFound = true, previews = true, readyAt = 3, bridge = tr
         calls.push('sendReady');
         return { editorText: 'question', sendReady: readyPolls >= readyAt, userMessageCount: 0 };
       }
+      if (script.includes('url: window.location.href')) {
+        return { url: 'https://chatgpt.com/', userMessageCount: 0 };
+      }
+      if (script.includes('assistants:')) return { assistants: [], userMessageCount: 0 };
       if (script.includes('send.click()')) {
         clicked = true;
         calls.push('click');
         return { ok: true };
       }
       if (script.includes('const assistants')) {
-        return { assistants: clicked ? [{ key: 'new', text: 'Here is the answer.' }] : [], streaming: false };
+        return {
+          assistants: clicked ? [{ key: 'new', text: 'Here is the answer.' }] : [],
+          streaming: false,
+          userMessageCount: clicked ? 1 : 0
+        };
       }
       if (script.includes('userMessageCount')) {
         return { editorFound: true, editorText: '', stopPresent: true, userMessageCount: 1, url: 'https://chatgpt.com/' };

@@ -11,6 +11,16 @@ export function isChatHost(hostname) {
   return CHAT_HOSTS.includes(hostname) || hostname.endsWith('.chatgpt.com');
 }
 
+export function isChatPath(href) {
+  if (typeof href !== 'string' || !href) return false;
+  try {
+    const url = new URL(href);
+    return isChatHost(url.hostname) && url.pathname.includes(CHAT_PATH_MARKER);
+  } catch {
+    return false;
+  }
+}
+
 export function isSharePath(href) {
   if (typeof href !== 'string' || !href) return false;
   try {

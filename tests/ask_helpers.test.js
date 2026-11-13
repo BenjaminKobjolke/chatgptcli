@@ -26,9 +26,9 @@ describe('ask helpers', () => {
   // before; a reply still growing between polls must not be returned as final.
   test('waits for the response text to stop growing', async () => {
     const probes = [
-      { assistants: [{ key: 'new', text: 'partial' }], streaming: false },
-      { assistants: [{ key: 'new', text: 'partial, then complete' }], streaming: false },
-      { assistants: [{ key: 'new', text: 'partial, then complete' }], streaming: false }
+      { assistants: [{ key: 'new', text: 'partial' }], streaming: false, userMessageCount: 1 },
+      { assistants: [{ key: 'new', text: 'partial, then complete' }], streaming: false, userMessageCount: 1 },
+      { assistants: [{ key: 'new', text: 'partial, then complete' }], streaming: false, userMessageCount: 1 }
     ];
     let index = 0;
     const page = {
@@ -39,7 +39,8 @@ describe('ask helpers', () => {
     const result = await askHelpers.waitForAssistantResponse(page, {
       prompt: 'Prompt text',
       timeoutMs: 60000,
-      baselineKeys: new Set()
+      baselineKeys: new Set(),
+      baselineUserCount: 0
     });
 
     expect(result.response).toBe('partial, then complete');
