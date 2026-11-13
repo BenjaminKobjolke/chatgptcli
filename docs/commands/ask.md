@@ -29,7 +29,7 @@ Uses the `chatgpt.com` web UI (via the opencli Browser Bridge), not the OpenAI A
 - JSON output includes the attempt plan for agent consumption.
 - `--file` inlines the file as text (UTF-8 text files only, max 1 MB); a missing file or oversized file fails with `INPUT_INVALID`. No browser upload — the content is appended to the prompt in a `--- FILE: <name> ---` block.
 - `--image` uploads pictures to the current chat, or to a fresh chat with `--new`. The prompt is required. Missing files, unsupported types, files over 20 MB, more than 10 images, or an upload failure produce a clear error. Use `--image` for pictures; `--file` rejects image extensions and remains text-only.
-- `[UPLOAD FAILED]` is retryable. If it says the bridge cannot set file inputs, update the OpenCLI Chrome extension; otherwise use the reported reason to diagnose the upload.
+- `[UPLOAD FAILED]` is retryable. Images are uploaded through Chrome first and sent through the ChatGPT page if Chrome refuses. If the reason mentions `Allow access to file URLs`, turn on that switch for the OpenCLI extension in `chrome://extensions` (OpenCLI > Details), then retry; otherwise use the reported reason to diagnose the upload.
 
 ## Examples
 
