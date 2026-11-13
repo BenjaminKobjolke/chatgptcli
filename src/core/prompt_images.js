@@ -4,6 +4,13 @@ import { extname, resolve } from 'node:path';
 import { AppError, ERROR_CODE } from './errors.js';
 
 export const IMAGE_EXTENSIONS = Object.freeze(['.png', '.jpg', '.jpeg', '.webp', '.gif']);
+export const IMAGE_MIME_TYPES = Object.freeze({
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.webp': 'image/webp',
+  '.gif': 'image/gif'
+});
 export const MAX_IMAGES = 10;
 export const MAX_IMAGE_BYTES = 20 * 1024 * 1024;
 

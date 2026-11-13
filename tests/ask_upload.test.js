@@ -1,21 +1,38 @@
-import { describe, expect, test } from 'bun:test';
+import { afterEach, describe, expect, test } from 'bun:test';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { attachImages } from '../src/commands/ask_upload.js';
 import { askOnPage, shouldRetry } from '../src/commands/ask_page.js';
 
-function fakePage({ inputFound = true, previews = true, readyAt = 3, bridge = true } = {}) {
+const tempDirectories = [];
+
+afterEach(() => {
+  for (const directory of tempDirectories.splice(0)) rmSync(directory, { recursive: true, force: true });
+});
+
+function fakePage({ inputFound = true, previews = true, readyAt = 3, bridge = true, assignResult = { ok: true } } = {}) {
   const calls = [];
   let readyPolls = 0;
   let clicked = false;
   const page = {
     calls,
     goto: async () => {},
-    wait: async () => {},
+    wait: async () => { calls.push('wait'); },
     insertText: async () => { calls.push('insertText'); },
     setFileInput: bridge ? async (paths, selector) => calls.push(['setFileInput', paths, selector]) : undefined,
     pressKey: async () => {},
     evaluate: async (script) => {
       if (script.includes('/api/auth/session')) {
         return { url: 'https://chatgpt.com/', editorFound: true, sendFound: true, loggedIn: true };
+      }
+      if (script.includes('delete window.__chatgptcliFileChunks')) {
+        calls.push(['cleanup', script]);
+        return true;
+      }
+      if (script.includes('__chatgptcliFileChunks')) {
+        calls.push(['inject', script]);
+        return script.includes('dataset.chatgptcliAssigned') ? assignResult : true;
       }
       if (script.includes('data-chatgptcli-file-input')) {
         calls.push('findFileInput');
@@ -42,7 +59,8 @@ function fakePage({ inputFound = true, previews = true, readyAt = 3, bridge = tr
       return [];
     }
   };
-  if (bridge === 'throws') page.setFileInput = async () => { throw new Error('not supported'); };
+  if (bridge === 'not-allowed') page.setFileInput = async () => { throw new Error('{"code":-32000,"message":"Not allowed"}'); };
+  if (bridge === 'socket') page.setFileInput = async () => { throw new Error('socket hang up'); };
   return page;
 }
 
@@ -96,7 +114,7 @@ describe('ask image uploads', () => {
     const page = fakePage();
     const result = await askOnPage(page, { prompt: 'Review these', images: ['a.png', 'b.jpg'], timeoutMs: 1000, newChat: true });
     expect(result.response).toBe('Here is the answer.');
-    expect(page.calls[1]).toEqual(['setFileInput', ['a.png', 'b.jpg'], '[data-chatgptcli-file-input="1"]']);
+    expect(page.calls.find((call) => Array.isArray(call) && call[0] === 'setFileInput')).toEqual(['setFileInput', ['a.png', 'b.jpg'], '[data-chatgptcli-file-input="1"]']);
     expect(page.calls.indexOf('findFileInput')).toBeLessThan(page.calls.indexOf('insertText'));
     expect(page.calls.filter((call) => call === 'sendReady')).toHaveLength(3);
   });
@@ -109,15 +127,51 @@ describe('ask image uploads', () => {
   });
 
   test('reports a missing bridge file upload capability', async () => {
-    const result = await askOnPage(fakePage({ bridge: false }), { prompt: 'Review', images: ['a.png'], timeoutMs: 1000, newChat: true });
-    expect(result.response).toContain('[UPLOAD FAILED]');
-    expect(result.response).toContain('update the OpenCLI extension');
+    const page = fakePage({ bridge: false });
+    const imagePath = createTempImage('a.png', Buffer.from('image'));
+    const result = await attachImages(page, [imagePath]);
+    expect(result).toEqual({ ok: true });
+    expect(page.calls.some((call) => Array.isArray(call) && call[0] === 'inject')).toBe(true);
   });
 
-  test('reports bridge upload errors with extension guidance', async () => {
-    const result = await askOnPage(fakePage({ bridge: 'throws' }), { prompt: 'Review', images: ['a.png'], timeoutMs: 1000, newChat: true });
-    expect(result.response).toContain('[UPLOAD FAILED]');
-    expect(result.response).toContain('not supported');
+  test('falls back after Not allowed and stages a large image in bounded chunks', async () => {
+    const directory = mkdtempSync(join(tmpdir(), 'chatgptcli-upload-'));
+    tempDirectories.push(directory);
+    const imagePath = join(directory, 'large.png');
+    const imageBytes = Buffer.alloc(400 * 1024, 23);
+    writeFileSync(imagePath, imageBytes);
+    const page = fakePage({ bridge: 'not-allowed' });
+    const result = await attachImages(page, [imagePath]);
+
+    expect(result).toEqual({ ok: true });
+    const stagingScripts = page.calls.filter((call) => Array.isArray(call) && call[0] === 'inject' && !call[1].includes('dataset.chatgptcliAssigned'));
+    const assignScripts = page.calls.filter((call) => Array.isArray(call) && call[0] === 'inject' && call[1].includes('dataset.chatgptcliAssigned'));
+    const injectedScripts = page.calls.filter((call) => Array.isArray(call) && call[0] === 'inject');
+    expect(stagingScripts).toHaveLength(3);
+    expect(injectedScripts.every(([, script]) => Buffer.byteLength(script) < 1024 * 1024)).toBe(true);
+    const base64 = stagingScripts.map(([, script]) => script.match(/\[\d+\]\[\d+\] = ("[^"]+")/)?.[1]).map((chunk) => JSON.parse(chunk)).join('');
+    expect(Buffer.from(base64, 'base64')).toEqual(imageBytes);
+    expect(assignScripts).toHaveLength(1);
+    expect(assignScripts[0][1]).toContain('large.png');
+    expect(assignScripts[0][1]).toContain('image/png');
+    expect(page.calls).toContain('findFileInput');
+    expect(page.calls.some((call) => call === 'wait' || Array.isArray(call) && call[0] === 'wait')).toBe(true);
+  });
+
+  test('does not fall back for unrelated bridge errors', async () => {
+    const page = fakePage({ bridge: 'socket' });
+    const result = await attachImages(page, ['a.png']);
+    expect(result.ok).toBe(false);
+    expect(result.reason).toContain('socket hang up');
+    expect(page.calls.some((call) => Array.isArray(call) && call[0] === 'inject')).toBe(false);
+  });
+
+  test('reports fallback errors with file access guidance', async () => {
+    const imagePath = createTempImage('a.png', Buffer.from('image'));
+    const result = await attachImages(fakePage({ bridge: 'not-allowed', assignResult: { ok: false, reason: 'file input not found' } }), [imagePath]);
+    expect(result.ok).toBe(false);
+    expect(result.reason).toContain('file input not found');
+    expect(result.reason).toContain('Allow access to file URLs');
   });
 
   test('reports when previews do not appear', async () => {
@@ -145,6 +199,14 @@ describe('ask image uploads', () => {
     expect(page.calls.filter((call) => call === 'sendReady')).toHaveLength(1);
   });
 });
+
+function createTempImage(name, bytes) {
+  const directory = mkdtempSync(join(tmpdir(), 'chatgptcli-upload-'));
+  tempDirectories.push(directory);
+  const imagePath = join(directory, name);
+  writeFileSync(imagePath, bytes);
+  return imagePath;
+}
 
 function fakeFileInput(accept) {
   const attributes = {};

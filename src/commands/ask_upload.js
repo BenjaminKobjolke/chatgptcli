@@ -5,9 +5,13 @@ import {
   SEND_SELECTOR,
   USER_SELECTOR
 } from './chatgpt_surface.js';
+import { IMAGE_MIME_TYPES } from '../core/prompt_images.js';
+import { injectFilesInPage } from './ask_upload_inject.js';
 
 const PREVIEW_TIMEOUT_MS = 20_000;
 export const UPLOAD_TIMEOUT_MS = 60_000;
+const FALLBACK_UPLOAD_ERRORS = /Not allowed|not supported|Unknown action|fileChooserOpened not received/;
+const FILE_ACCESS_HINT = 'enable "Allow access to file URLs" for the OpenCLI extension (chrome://extensions > OpenCLI > Details) so Chrome can upload the files directly';
 
 const PREPARE_INPUT_SCRIPT = `(() => {
   const editor = document.querySelector(${JSON.stringify(EDITOR_SELECTOR)});
@@ -15,7 +19,7 @@ const PREPARE_INPUT_SCRIPT = `(() => {
   document.querySelectorAll('[data-chatgptcli-file-input="1"]').forEach((input) => input.removeAttribute('data-chatgptcli-file-input'));
   if (!form) return { ok: false, reason: 'composer file input not found' };
   const files = ${'__IMAGE_FILES__'};
-  const mimeByExtension = { '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.webp': 'image/webp', '.gif': 'image/gif' };
+  const mimeByExtension = ${JSON.stringify(IMAGE_MIME_TYPES)};
   const acceptedTypes = (input) => (input.accept || '').split(',').map((value) => value.trim().toLowerCase()).filter(Boolean);
   const accepts = (input, file) => {
     const accepted = acceptedTypes(input);
@@ -55,20 +59,26 @@ export async function attachImages(page, paths) {
     return { ok: false, reason: `could not find composer file input: ${message}` };
   }
   if (!prepared?.ok) return { ok: false, reason: prepared?.reason || 'composer file input not found' };
-  if (typeof page.setFileInput !== 'function') {
-    return { ok: false, reason: 'Browser Bridge cannot set file inputs; update the OpenCLI extension.' };
-  }
+  if (typeof page.setFileInput !== 'function') return uploadWithFallback(page, paths);
 
   try {
     await page.setFileInput(paths, COMPOSER_FILE_INPUT_SELECTOR);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    return {
-      ok: false,
-      reason: `Browser Bridge file upload failed: ${message}; update the OpenCLI extension if it says not supported.`
-    };
+    if (FALLBACK_UPLOAD_ERRORS.test(message)) return uploadWithFallback(page, paths);
+    return { ok: false, reason: `Browser Bridge file upload failed: ${message}` };
   }
 
+  return waitForPreviews(page, paths);
+}
+
+async function uploadWithFallback(page, paths) {
+  const result = await injectFilesInPage(page, paths, COMPOSER_FILE_INPUT_SELECTOR);
+  if (result.ok) return waitForPreviews(page, paths);
+  return { ok: false, reason: `Browser upload fallback failed: ${result.reason}; ${FILE_ACCESS_HINT}` };
+}
+
+async function waitForPreviews(page, paths) {
   const names = paths.map((path) => path.split(/[\\/]/).at(-1));
   const previews = buildPreviewScript(names, paths.length);
   try {
