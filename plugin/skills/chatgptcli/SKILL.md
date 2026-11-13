@@ -40,9 +40,11 @@ All commands print JSON by default; use `-f text` for plain text and relay that 
 | "get the deep research report" / "show the generated file" | `chatgptcli.exe read <url-or-id> -f text --files-inline` |
 | "download the images / attachments from the chat" | `chatgptcli.exe read <url-or-id> -f text --files-output "path\to\dir"` |
 | "ask chatgpt X" | `chatgptcli.exe ask "X" -f text` |
+| Read back the exact chat used by an ask | `chatgptcli.exe read "<url from ask JSON>" -f text` |
 | "ask chatgpt about file Y" / "send this file to chatgpt" | `chatgptcli.exe ask "question" --file "path\to\Y" -f text` |
 | "ask chatgpt about these screenshots" / "send this image to chatgpt" | `chatgptcli.exe ask "question" --image "path\to\a.png" --image "path\to\b.png" -f text` |
 | Ask returns `[SUBMIT FAILED]` | Retry once with `chatgptcli.exe ask "question" --new --max-attempts 1`; if it fails again, report the named check, tab URL, and profile. |
+| Ask returns `[SEND FAILED] fresh chat did not open` | Retry once with `chatgptcli.exe ask "question" --new --max-attempts 1`; if it fails again, report the tab URL. |
 | Ask returns `[UPLOAD FAILED]` | Retry once with `chatgptcli.exe ask "question" --image "path\to\image.png" --new --max-attempts 1`; if it fails again, report the upload reason. |
 
 Notes:
@@ -59,6 +61,7 @@ Notes:
 - `read` shows attachments as markers (`[image-01]`, `[report-01]`, `[file-01]`), not content. To get the actual content use `--files-inline` (report/file text in the transcript) or `--files-output <dir>` (writes every attachment to disk, images included, and turns each marker into a markdown link). `--file-id <id>` with `--files-output` downloads just one.
 - `read` reloads the chat before reading, with or without a URL argument — a stale tab hides the "Files in chat" panel and every attachment with it. An attachment it could not write is named on stderr, and `--files-output` echoes the resolved output directory as `filesOutputDir` in the JSON.
 - `ask` options: `--new` starts a fresh chat; `--timeout <seconds>` for long answers (default 120); `--file <path>` inlines a local text file's content into the prompt (UTF-8 text only, max 1 MB — no browser upload); repeat `--image <path>` for 1–10 PNG, JPG, JPEG, WebP, or GIF pictures (max 20 MB each), uploaded through the composer. Images work in the current chat or with `--new`; ChatGPT finishes uploading before the prompt is sent. `--file` stays text-only and rejects image extensions with a hint to use `--image`. Use an absolute or repo-relative path and quote it for PowerShell.
+- `ask -f json` returns the `url` of the chat used when known. To inspect that exact exchange, run `chatgptcli.exe read "<url>" -f text`. A `[SEND FAILED] fresh chat did not open` result means the tab stayed on an existing chat; retry once with `--new --max-attempts 1`, then report the tab URL if it persists.
 - `[SUBMIT FAILED]` means the prompt was typed but sending did not start after the send click and one Enter fallback. It is not a login error: do not tell the user to log in just from this result. Retry once with `--new --max-attempts 1`; if it still fails, report the check, tab URL, and profile from the result.
 - `[UPLOAD FAILED]` means ChatGPT could not attach or finish uploading one or more images. Images are uploaded natively first and sent through the ChatGPT page if Chrome refuses. Retry once with `--new --max-attempts 1`; if the reason mentions `Allow access to file URLs`, tell the user to turn on that switch for the OpenCLI extension in `chrome://extensions` (OpenCLI > Details) and retry. Otherwise report the upload reason and do not treat it as a login failure.
 - Exes below `0.1.10` can falsely report `[BLOCKED] ChatGPT page is not in a logged-in ready state` when an `--file` prompt contains words such as “login” or “sign in”. Update the exe before asking the user to log in for that result.
