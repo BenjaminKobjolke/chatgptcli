@@ -4,6 +4,34 @@ cd /d "%~dp0.."
 rem Stale daemon instances keep the exe locked and the build's move fails with EPERM
 taskkill /im chatgptcli.exe /f >nul 2>&1
 
+for /f "delims=" %%v in ('call "%~dp0package_version_get.bat"') do set VERSION=%%v
+if "%VERSION%"=="" (
+    echo [FAIL] could not read version from package.json
+    exit /b 1
+)
+
+set RELEASE_LIST=%TEMP%\chatgptcli_release_list_%RANDOM%.txt
+gh release list --repo BenjaminKobjolke/chatgptcli --limit 1000 --json tagName --jq ".[].tagName" > "%RELEASE_LIST%" 2>&1
+if errorlevel 1 (
+    echo [FAIL] could not check GitHub releases:
+    type "%RELEASE_LIST%"
+    del "%RELEASE_LIST%" >nul 2>&1
+    exit /b 1
+)
+
+findstr /x /c:"v%VERSION%" "%RELEASE_LIST%" >nul
+if not errorlevel 1 (
+    del "%RELEASE_LIST%" >nul 2>&1
+    echo [FAIL] GitHub release v%VERSION% already exists - bump version in package.json first.
+    exit /b 1
+)
+if errorlevel 2 (
+    echo [FAIL] could not inspect the GitHub release list.
+    del "%RELEASE_LIST%" >nul 2>&1
+    exit /b 1
+)
+del "%RELEASE_LIST%" >nul 2>&1
+
 call "%~dp0build.bat"
 if errorlevel 1 (
     echo [FAIL] build failed
@@ -11,12 +39,6 @@ if errorlevel 1 (
 )
 if not exist chatgptcli.exe (
     echo [FAIL] build did not produce chatgptcli.exe
-    exit /b 1
-)
-
-for /f "delims=" %%v in ('call "%~dp0package_version_get.bat"') do set VERSION=%%v
-if "%VERSION%"=="" (
-    echo [FAIL] could not read version from package.json
     exit /b 1
 )
 
@@ -33,7 +55,7 @@ if "%LABEL%"=="" (
 rem Release body: authored release notes if present, otherwise gh-generated notes
 set NOTES_ARGS=--generate-notes
 if exist "release-notes\%LABEL%\en.json" (
-    powershell -NoProfile -Command "$j = Get-Content 'release-notes/%LABEL%/en.json' -Raw | ConvertFrom-Json; $lines = @($j.title, '') + @($j.notes | ForEach-Object { '- ' + $_ }); Set-Content -Path '%TEMP%\chatgptcli_release_notes.md' -Value $lines -Encoding UTF8"
+    powershell -NoProfile -Command "$j = Get-Content 'release-notes/%LABEL%/en.json' -Raw -Encoding UTF8 | ConvertFrom-Json; $lines = @($j.title, '') + @($j.notes | ForEach-Object { '- ' + $_ }); [IO.File]::WriteAllLines('%TEMP%\chatgptcli_release_notes.md', [string[]]$lines, [Text.UTF8Encoding]::new($false))"
     set NOTES_ARGS=--notes-file "%TEMP%\chatgptcli_release_notes.md"
 ) else (
     echo [WARN] release-notes\%LABEL%\en.json not found - using gh --generate-notes

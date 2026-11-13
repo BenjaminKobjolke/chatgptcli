@@ -57,11 +57,12 @@ tools\build_and_create_github_release.bat N      # automated: no exe, no prompt
 What it does:
 
 1. Kills stale `chatgptcli.exe` daemon instances (they lock the exe).
-2. Builds `chatgptcli.exe` via `tools/build.bat` (Bun `--compile`).
-3. Reads the semver from `package.json` and the label from `tools/version_get.bat`.
-4. Uses `release-notes/<label>/en.json` (title + notes bullets) as the GitHub release body; falls back to `--generate-notes` with a warning if the folder is missing.
-5. **Asks on every run whether to upload `chatgptcli.exe`** to the release (Y/N). No = release is created without the exe asset. Pass `Y` or `N` as the first argument to skip the prompt (automated/skill runs).
-6. Creates GitHub release `v<version>` via `gh release create`.
+2. Reads the semver from `package.json` and stops with `[FAIL]` before building when release `v<version>` already exists on GitHub.
+3. Builds `chatgptcli.exe` via `tools/build.bat` (Bun `--compile`).
+4. Reads the release label from `tools/version_get.bat`.
+5. Uses `release-notes/<label>/en.json` (title + notes bullets) as the GitHub release body; falls back to `--generate-notes` with a warning if the folder is missing.
+6. **Asks on every run whether to upload `chatgptcli.exe`** to the release (Y/N). No = release is created without the exe asset. Pass `Y` or `N` as the first argument to skip the prompt (automated/skill runs).
+7. Creates GitHub release `v<version>` via `gh release create`.
 
 ## Release notes distribution
 
