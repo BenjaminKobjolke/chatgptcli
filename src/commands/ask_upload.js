@@ -17,6 +17,7 @@ const PREPARE_INPUT_SCRIPT = `(() => {
   const editor = document.querySelector(${JSON.stringify(EDITOR_SELECTOR)});
   const form = editor?.closest('form');
   document.querySelectorAll('[data-chatgptcli-file-input="1"]').forEach((input) => input.removeAttribute('data-chatgptcli-file-input'));
+  document.querySelectorAll('[data-chatgptcli-assigned]').forEach((input) => input.removeAttribute('data-chatgptcli-assigned'));
   if (!form) return { ok: false, reason: 'composer file input not found' };
   const files = ${'__IMAGE_FILES__'};
   const mimeByExtension = ${JSON.stringify(IMAGE_MIME_TYPES)};

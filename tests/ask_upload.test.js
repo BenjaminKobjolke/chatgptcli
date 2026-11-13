@@ -166,6 +166,31 @@ describe('ask image uploads', () => {
     expect(page.calls.some((call) => call === 'wait' || Array.isArray(call) && call[0] === 'wait')).toBe(true);
   });
 
+  test('assigns files again on a later fallback upload in the same composer', async () => {
+    const firstImage = createTempImage('first.png', Buffer.from('first image'));
+    const secondImage = createTempImage('second.png', Buffer.from('second image'));
+    const page = fallbackPage();
+
+    expect(await attachImages(page, [firstImage])).toEqual({ ok: true });
+    expect(await attachImages(page, [secondImage])).toEqual({ ok: true });
+
+    expect(page.input.files.map((file) => file.name)).toEqual(['second.png']);
+    expect(page.changeEvents).toBe(4);
+  });
+
+  test('keeps a repeated fallback assignment from dispatching twice in one upload', async () => {
+    const imagePath = createTempImage('once.png', Buffer.from('image'));
+    const page = fallbackPage();
+
+    expect(await attachImages(page, [imagePath])).toEqual({ ok: true });
+    const assignedFiles = page.input.files;
+    const changeEvents = page.changeEvents;
+    expect(await page.evaluate(page.assignScript)).toEqual({ ok: true });
+
+    expect(page.input.files).toBe(assignedFiles);
+    expect(page.changeEvents).toBe(changeEvents);
+  });
+
   test('does not fall back for unrelated bridge errors', async () => {
     const page = fakePage({ bridge: 'socket' });
     const result = await attachImages(page, ['a.png']);
@@ -227,4 +252,85 @@ function fakeFileInput(accept) {
     setAttribute: (name, value) => { attributes[name] = value; },
     removeAttribute: (name) => { delete attributes[name]; }
   };
+}
+
+function fallbackPage() {
+  const attributes = {};
+  const dataset = {};
+  const input = {
+    accept: 'image/*',
+    multiple: true,
+    disabled: false,
+    attributes,
+    dataset,
+    files: [],
+    hasAttribute: (name) => Object.hasOwn(attributes, name),
+    setAttribute: (name, value) => {
+      attributes[name] = value;
+      if (name.startsWith('data-')) {
+        const key = name.slice(5).replace(/-([a-z])/g, (_match, letter) => letter.toUpperCase());
+        dataset[key] = value;
+      }
+    },
+    removeAttribute: (name) => {
+      delete attributes[name];
+      if (name.startsWith('data-')) {
+        const key = name.slice(5).replace(/-([a-z])/g, (_match, letter) => letter.toUpperCase());
+        delete dataset[key];
+      }
+    },
+    dispatchEvent: () => { page.changeEvents += 1; }
+  };
+  const form = { querySelectorAll: () => [input] };
+  const editor = { closest: () => form };
+  const document = {
+    querySelector: (selector) => selector.includes('data-chatgptcli-file-input') ? input : editor,
+    querySelectorAll: (selector) => {
+      if (selector === '[data-chatgptcli-file-input="1"]') {
+        return Object.hasOwn(attributes, 'data-chatgptcli-file-input') ? [input] : [];
+      }
+      if (selector === '[data-chatgptcli-assigned]') {
+        return Object.hasOwn(dataset, 'chatgptcliAssigned') ? [input] : [];
+      }
+      return [];
+    }
+  };
+  const window = {};
+  class FakeFile {
+    constructor(_parts, name, options) {
+      this.name = name;
+      this.type = options.type;
+    }
+  }
+  class FakeDataTransfer {
+    constructor() {
+      const files = [];
+      this.items = { add: (file) => files.push(file) };
+      Object.defineProperty(this, 'files', { get: () => files });
+    }
+  }
+  const page = {
+    input,
+    changeEvents: 0,
+    assignScript: '',
+    wait: async () => {},
+    setFileInput: async () => { throw new Error('Not allowed'); },
+    evaluate: async (script) => {
+      if (script.includes('delete window.__chatgptcliFileChunks')) {
+        delete window.__chatgptcliFileChunks;
+        return true;
+      }
+      if (script.includes('const names =')) return true;
+      if (script.includes('dataset.chatgptcliAssigned')) page.assignScript = script;
+      return Function('document', 'window', 'DataTransfer', 'File', 'atob', 'Event', `return ${script}`)(
+        document,
+        window,
+        FakeDataTransfer,
+        FakeFile,
+        atob,
+        class FakeEvent {}
+      );
+    }
+  };
+  return page;
 }
