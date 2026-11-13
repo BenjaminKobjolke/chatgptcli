@@ -18,7 +18,7 @@ It does not use the OpenAI API. It drives the authenticated `chatgpt.com` web UI
 Chrome executable, profile dir and bridge-session selection are configured in `~/.chatgptcli/settings.json` — see [docs/CHROME_SESSIONS.md](docs/CHROME_SESSIONS.md).
 
 `chatgptcli ask` includes a built-in retry plan. It reuses the `site:chatgpt` browser session, falls back to a fresh chat on retry, and returns JSON by default for agent consumption.
-Image upload and send failures include a privacy-safe `composer:` snapshot; report the full snapshot when diagnosing a failed ask.
+Before attaching images or typing, `ask` waits up to 60 seconds for ChatGPT's stop button to disappear. If the previous reply is still generating, it returns retryable `[SEND FAILED] previous reply is still generating` with a privacy-safe `composer:` snapshot. Image upload and send failures include the same snapshot; report it when diagnosing a failed ask.
 
 ## Requirements
 
