@@ -1,0 +1,11 @@
+{
+  "version": "0.1.13",
+  "build": 13,
+  "date": "2026-11-13",
+  "title": "Fresh chat check and chat URL",
+  "notes": [
+    "ask now verifies that a fresh chat actually opened before sending, and only accepts a reply after the new message appears.",
+    "ask --json returns the chat URL, so the exact conversation can be read back.",
+    "Installed 0.1.12 executables now report UPDATE_REQUIRED and should be re-downloaded."
+  ]
+}
