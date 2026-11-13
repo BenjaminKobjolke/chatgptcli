@@ -27,13 +27,14 @@ function longPromptFromFile() {
 function fakePage({ loggedIn = true, submitted = true } = {}) {
   let clicked = false;
   let entered = false;
+  let insertedPrompt = '';
   const calls = { enter: 0 };
 
   return {
     calls,
     goto: async () => {},
     wait: async () => {},
-    insertText: async () => {},
+    insertText: async (text) => { insertedPrompt = text; },
     pressKey: async (key) => {
       expect(key).toBe('Enter');
       calls.enter += 1;
@@ -54,6 +55,7 @@ function fakePage({ loggedIn = true, submitted = true } = {}) {
           assistants: clicked ? [{ key: 'new', text: 'Here is the answer.' }] : [],
           streaming: false,
           userMessageCount: clicked ? 1 : 0,
+          lastUserText: clicked ? insertedPrompt : '',
           loginLike: false,
           challengeLike: false
         };

@@ -15,11 +15,12 @@ function fakePage({ inputFound = true, previews = true, readyAt = 3, bridge = tr
   const calls = [];
   let readyPolls = 0;
   let clicked = false;
+  let insertedPrompt = '';
   const page = {
     calls,
     goto: async () => {},
     wait: async () => { calls.push('wait'); },
-    insertText: async () => { calls.push('insertText'); },
+    insertText: async (text) => { insertedPrompt = text; calls.push('insertText'); },
     setFileInput: bridge ? async (paths, selector) => calls.push(['setFileInput', paths, selector]) : undefined,
     pressKey: async () => {},
     evaluate: async (script) => {
@@ -57,7 +58,8 @@ function fakePage({ inputFound = true, previews = true, readyAt = 3, bridge = tr
         return {
           assistants: clicked ? [{ key: 'new', text: 'Here is the answer.' }] : [],
           streaming: false,
-          userMessageCount: clicked ? 1 : 0
+          userMessageCount: clicked ? 1 : 0,
+          lastUserText: clicked ? insertedPrompt : ''
         };
       }
       if (script.includes('userMessageCount')) {

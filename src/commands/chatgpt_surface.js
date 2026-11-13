@@ -2,11 +2,11 @@
 import { SESSION_URL } from '../core/chatgpt_site.js';
 
 export const EDITOR_SELECTOR = '.ProseMirror[role="textbox"]';
-// Each selector lists the older testid markup first, then the redesigned one.
 export const SEND_SELECTOR = '[data-testid="send-button"], form button[type="submit"]';
 // Confirmed live mid-stream: the redesigned stop button has no testid.
 export const STOP_SELECTOR = '[data-testid="stop-button"], form button[aria-label^="Stop"]';
-export const USER_SELECTOR = '[data-message-author-role="user"]';
+// The legacy role markup comes first, followed by redesigned content-search units.
+export const USER_SELECTOR = '[data-message-author-role="user"], [data-content-search-unit-key$=":user"]';
 export const COMPOSER_FILE_INPUT_SELECTOR = '[data-chatgptcli-file-input="1"]';
 export const CHALLENGE_HINTS = Object.freeze([
   'captcha',

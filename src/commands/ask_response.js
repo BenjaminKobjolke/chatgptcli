@@ -9,6 +9,7 @@ const ASSISTANTS_EXPRESSION = `Array.from(document.querySelectorAll(${JSON.strin
   })
   .filter((entry) => entry.text)`;
 const NO_RESPONSE_PREFIX = '[NO RESPONSE]';
+const FOREIGN_PROMPT_REASON = '[SEND FAILED] the newest message in this chat is not this prompt; another session may be using the ChatGPT tab';
 
 export async function captureAssistantBaseline(page) {
   const baseline = await page.evaluate(`(() => ({
@@ -24,21 +25,31 @@ export async function captureAssistantBaseline(page) {
 export async function waitForAssistantResponse(page, input) {
   const startedAt = Date.now();
   let lastResponse = '';
+  let sawForeignPrompt = false;
 
   while (Date.now() - startedAt < input.timeoutMs) {
     await page.wait(2);
     const probe = await page.evaluate(`(() => {
       const assistants = ${ASSISTANTS_EXPRESSION};
       const streaming = Boolean(document.querySelector(${JSON.stringify(STOP_SELECTOR)}));
+      const userMessages = document.querySelectorAll(${JSON.stringify(USER_SELECTOR)});
+      const lastUserMessage = userMessages[userMessages.length - 1];
       return {
         assistants,
         streaming,
-        userMessageCount: document.querySelectorAll(${JSON.stringify(USER_SELECTOR)}).length
+        userMessageCount: userMessages.length,
+        lastUserText: lastUserMessage
+          ? ((lastUserMessage instanceof HTMLElement ? lastUserMessage.innerText : lastUserMessage.textContent) || '')
+          : ''
       };
     })()`);
 
     const hasNewUserMessage = Number(probe?.userMessageCount) > input.baselineUserCount;
-    const response = hasNewUserMessage
+    const ownsLatestPrompt = hasNewUserMessage && isOwnPrompt(probe?.lastUserText, input.prompt);
+    if (hasNewUserMessage && !ownsLatestPrompt) {
+      sawForeignPrompt = true;
+    }
+    const response = ownsLatestPrompt
       ? pickLatestAssistantCandidate(probe.assistants, input.baselineKeys, input.prompt)
       : '';
     // The stop selector has drifted before, so a reply must also hold still for one full poll.
@@ -48,7 +59,15 @@ export async function waitForAssistantResponse(page, input) {
     lastResponse = response || lastResponse;
   }
 
-  return { response: lastResponse || NO_RESPONSE_PREFIX };
+  return { response: lastResponse || (sawForeignPrompt ? FOREIGN_PROMPT_REASON : NO_RESPONSE_PREFIX) };
+}
+
+function isOwnPrompt(lastUserText, prompt) {
+  const normalizedUserText = normalizeResponse(lastUserText).replace(/\s+/g, ' ');
+  const normalizedPrompt = normalizeResponse(prompt).replace(/\s+/g, ' ');
+  // ChatGPT can collapse long user messages, so compare a whitespace-normalized prompt prefix.
+  const promptPrefix = normalizedPrompt.slice(0, 80);
+  return !promptPrefix || normalizedUserText.includes(promptPrefix);
 }
 
 function normalizeAssistants(value) {

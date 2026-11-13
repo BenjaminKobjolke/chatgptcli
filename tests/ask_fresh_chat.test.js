@@ -8,13 +8,14 @@ const NEW_CHAT_URL = 'https://chatgpt.com/c/new-id';
 function fakePage({ url = 'https://chatgpt.com/', userCount = 0, reply = '', staleReply = false } = {}) {
   let currentUrl = url;
   let sent = false;
+  let insertedPrompt = '';
   const calls = { goto: 0, insertText: 0, attach: 0 };
 
   return {
     calls,
     goto: async () => { calls.goto += 1; },
     wait: async () => {},
-    insertText: async () => { calls.insertText += 1; },
+    insertText: async (text) => { insertedPrompt = text; calls.insertText += 1; },
     setFileInput: async () => { calls.attach += 1; },
     evaluate: async (script) => {
       if (script.includes('/api/auth/session')) {
@@ -26,7 +27,7 @@ function fakePage({ url = 'https://chatgpt.com/', userCount = 0, reply = '', sta
       if (script.includes('const assistants') && script.includes('return {')) {
         const userMessageCount = sent && !staleReply ? Math.max(userCount, 1) : userCount;
         const assistants = reply && (sent || staleReply) ? [{ key: staleReply ? 'old-reply' : 'answer', text: reply }] : [];
-        return { assistants, streaming: false, userMessageCount };
+        return { assistants, streaming: false, userMessageCount, lastUserText: sent && !staleReply ? insertedPrompt : '' };
       }
       if (script.includes('data-message-author-role') && script.includes('user')) {
         const userMessageCount = sent && !staleReply ? Math.max(userCount, 1) : userCount;
