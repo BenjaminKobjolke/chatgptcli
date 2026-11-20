@@ -39,6 +39,73 @@ function stubShare(conversation, options = {}) {
 }
 
 describe('read public shared conversations', () => {
+  test('marks an incomplete share and warns when the owner chat cannot be fetched', async () => {
+    const backingRequests = [];
+    const conversation = {
+      ...chain([message('user', ['question']), message('assistant', ['Ich'], { status: 'in_progress' })]),
+      backing_conversation_id: 'owner-chat'
+    };
+    stubShare(conversation, { backingRequests });
+
+    const stdout = captureStdout();
+    const stderr = captureStderr();
+    const code = await runCli(['read', SHARE_URL, '-f', 'json']);
+
+    expect(code).toBe(0);
+    expect(JSON.parse(stdout.join(''))).toMatchObject({ incomplete: true, messages: [{}, { role: 'assistant', text: 'Ich' }] });
+    expect(stderr.join('')).toContain('warning: the last reply is incomplete');
+    expect(backingRequests).toEqual(['owner-chat']);
+  });
+
+  test('uses a complete owner chat for an incomplete share', async () => {
+    const backingRequests = [];
+    const conversation = {
+      ...chain([message('user', ['question']), message('assistant', ['Ich'], { status: 'in_progress' })]),
+      backing_conversation_id: 'owner-chat'
+    };
+    const backingConversation = chain([message('user', ['question']), message('assistant', ['The full answer'])]);
+    stubShare(conversation, { backingConversation, backingRequests });
+
+    const stdout = captureStdout();
+    const stderr = captureStderr();
+    const code = await runCli(['read', SHARE_URL, '-f', 'json']);
+
+    expect(code).toBe(0);
+    expect(JSON.parse(stdout.join(''))).toMatchObject({ url: SHARE_URL, messages: [{}, { role: 'assistant', text: 'The full answer' }] });
+    expect(JSON.parse(stdout.join(''))).not.toHaveProperty('incomplete');
+    expect(stderr.join()).toBe('');
+    expect(backingRequests).toEqual(['owner-chat']);
+  });
+
+  test('does not fetch the owner chat for a complete share', async () => {
+    const backingRequests = [];
+    const conversation = { ...chain([message('user', ['question']), message('assistant', ['answer'])]), backing_conversation_id: 'owner-chat' };
+    stubShare(conversation, { backingConversation: chain([]), backingRequests });
+
+    const stdout = captureStdout();
+    const code = await runCli(['read', SHARE_URL, '-f', 'json']);
+
+    expect(code).toBe(0);
+    expect(JSON.parse(stdout.join(''))).toEqual({ ok: true, url: SHARE_URL, count: 2, messages: [{ role: 'user', text: 'question' }, { role: 'assistant', text: 'answer' }] });
+    expect(backingRequests).toEqual([]);
+  });
+
+  test('marks an in-progress account chat incomplete and warns', async () => {
+    __setReadDepsForTest({
+      openChat: async () => fakeReadPage(null, fakeConversationExtras(chain([
+        message('user', ['question']), message('assistant', ['partial'], { status: 'in_progress' })
+      ])))
+    });
+
+    const stdout = captureStdout();
+    const stderr = captureStderr();
+    const code = await runCli(['read', 'chat-id', '-f', 'json']);
+
+    expect(code).toBe(0);
+    expect(JSON.parse(stdout.join(''))).toHaveProperty('incomplete', true);
+    expect(stderr.join('')).toContain('warning: the last reply is incomplete');
+  });
+
   test('prints the visible shared conversation in text format', async () => {
     stubShare(chain([
       message('system', ['hidden prompt'], { metadata: { is_visually_hidden_from_conversation: true } }),

@@ -5,6 +5,7 @@ import { AppError, ERROR_CODE, EXIT_CODE } from '../core/errors.js';
 import { withSitePage } from '../../.omx/reference/opencli-app-kit/src/core/session.js';
 import { resolveBridgeProfile } from '../core/settings.js';
 import { readConversation, resolveImagePointers, resolvePendingAttachments } from './read_conversation.js';
+import { writeStderr } from '../../.omx/reference/opencli-app-kit/src/core/cli_shell.js';
 import { EMPTY_TRANSCRIPT_ERROR, FETCH_FAILURE } from './read_failure.js';
 import { readScrapeScript, reportFrameScript } from './read_scrape.js';
 import { resolveReportFiles } from './read_files_panel.js';
@@ -21,6 +22,7 @@ import {
 // `[data-turn-key]` is the redesigned markup's turn; public shares expose each
 // transcript item directly as `[data-message-role]`.
 const TURN_SELECTOR = '[data-turn-key], [data-testid^="conversation-turn"], [data-message-author-role], [data-message-role]';
+const INCOMPLETE_WARNING = 'warning: the last reply is incomplete — ChatGPT was still writing it when this chat or share link was saved. Re-share the chat after the answer has finished.';
 
 // Location test for a bare `read` (no URL argument). Deliberately NOT
 // `normalizeChatUrl`: that one normalizes *user input*, so it coerces any
@@ -206,6 +208,7 @@ export async function runRead(input) {
     // mounted, so it is the fallback for when that endpoint stops answering.
     const conversation = await readConversation(page);
     const result = conversation.result ?? (await page.evaluate(readScrapeScript(0)));
+    if (result?.incomplete) writeStderr(INCOMPLETE_WARNING);
     const rawMessages = Array.isArray(result?.messages) ? result.messages : [];
     // Ids run per kind across the whole chat, but each browser context numbers
     // its own images, so the running image count is handed to the next scrape.
@@ -261,7 +264,7 @@ export async function runRead(input) {
     return {
       exitCode: EXIT_CODE.SUCCESS,
       output: JSON.stringify(
-        { ok: true, url: result?.url || '', count: messages.length, ...filesOutputDir, messages },
+        { ok: true, url: result?.url || '', count: messages.length, ...filesOutputDir, ...(result?.incomplete ? { incomplete: true } : {}), messages },
         null,
         2
       )

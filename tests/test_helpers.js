@@ -105,10 +105,19 @@ export function fakeConversationExtras(
     url = shared ? 'https://chatgpt.com/share/abc-123' : 'https://chatgpt.com/c/abc',
     dataUrl = '',
     requests = [],
+    backingConversation = null,
+    backingRequests = [],
     sandboxFiles = {}
   } = {}
 ) {
   const evaluate = async (script) => {
+    const backingId = conversation.backing_conversation_id;
+    if (shared && typeof backingId === 'string' && script.includes(JSON.stringify(backingId))) {
+      backingRequests.push(backingId);
+      return backingConversation
+        ? { url: `https://chatgpt.com/c/${backingId}`, status: 200, shared: false, authHeader: 'Bearer token', body: JSON.stringify(backingConversation) }
+        : { url: `https://chatgpt.com/c/${backingId}`, status: 404, shared: false, authHeader: 'Bearer token', body: '' };
+    }
     if (script.includes('/interpreter/download')) {
       const path = Object.keys(sandboxFiles).find((entry) => script.includes(encodeURIComponent(entry)));
       return path ? JSON.stringify({ download_url: `https://chatgpt.com/backend-api/estuary/content?sandbox=${encodeURIComponent(path)}`, file_name: path }) : '';

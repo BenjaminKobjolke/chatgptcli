@@ -25,6 +25,7 @@ import { safeJsonParse } from '../../.omx/reference/opencli-app-kit/src/core/pag
 const CONVERSATION_URL = '/backend-api/conversation/';
 const SHARE_URL = '/backend-api/share/';
 const STATUS_OK = 200;
+const STATUS_IN_PROGRESS = 'in_progress';
 const ROLE = Object.freeze({ USER: 'user', ASSISTANT: 'assistant', TOOL: 'tool' });
 const VISIBLE_CONTENT_TYPES = Object.freeze(['text', 'multimodal_text']);
 const VISIBLE_RECIPIENT = 'all';
@@ -42,12 +43,12 @@ const FIRST_HEADING_PATTERN = /^#\s+(.+)$/m;
 // them runs in Node, where it can be tested. The chat id comes from the tab's
 // own location so a bare `read` (no URL argument) works the same way. Public
 // share links use their unauthenticated endpoint instead of the account API.
-function conversationFetchScript() {
+function conversationFetchScript(chatIdOverride = '') {
   return `(async () => {
-    const chatId = location.pathname.includes(${JSON.stringify(CHAT_PATH_MARKER)})
+    const chatId = ${JSON.stringify(chatIdOverride)} || (location.pathname.includes(${JSON.stringify(CHAT_PATH_MARKER)})
       ? location.pathname.split(${JSON.stringify(CHAT_PATH_MARKER)}).pop().split('/')[0]
-      : '';
-    const shareId = location.pathname.includes(${JSON.stringify(SHARE_PATH_MARKER)})
+      : '');
+    const shareId = !${JSON.stringify(chatIdOverride)} && location.pathname.includes(${JSON.stringify(SHARE_PATH_MARKER)})
       ? location.pathname.split(${JSON.stringify(SHARE_PATH_MARKER)}).pop().split('/')[0]
       : '';
     const result = { url: location.href, status: 0, loggedOut: false, offChat: !chatId && !shareId, shared: Boolean(shareId), authHeader: '', body: '' };
@@ -74,6 +75,10 @@ function conversationFetchScript() {
     } catch {}
     return result;
   })()`;
+}
+
+function isIncomplete(conversation) {
+  return conversation?.mapping?.[conversation.current_node]?.message?.status === STATUS_IN_PROGRESS;
 }
 
 // Boundary normalizer. `null` means "no usable conversation" — a failed fetch,
@@ -212,11 +217,17 @@ function conversationMessages(conversation) {
 // fetch was unusable; `failure` then says why, if the fetch could tell.
 export async function readConversation(page) {
   const raw = await page.evaluate(conversationFetchScript());
-  const fetched = normalizeConversationFetch(raw);
+  let fetched = normalizeConversationFetch(raw);
+  const backingId = fetched?.conversation?.backing_conversation_id;
+  if (raw?.shared && fetched && isIncomplete(fetched.conversation) && typeof backingId === 'string' && backingId.trim()) {
+    const backing = normalizeConversationFetch(await page.evaluate(conversationFetchScript(backingId)));
+    if (backing) fetched = { ...backing, url: fetched.url };
+  }
   const result = fetched && {
     url: fetched.url,
     authHeader: fetched.authHeader,
     imagesPositioned: true,
+    incomplete: isIncomplete(fetched.conversation),
     ...conversationMessages(fetched.conversation)
   };
   return { result, failure: conversationFetchFailure(raw) };
@@ -258,4 +269,4 @@ export async function resolveImagePointers({ page, messages, authHeader, fileId 
   }
 }
 
-export const __test__ = { conversationFetchScript, conversationMessages, normalizeConversationFetch };
+export const __test__ = { conversationFetchScript, conversationMessages, isIncomplete, normalizeConversationFetch };
