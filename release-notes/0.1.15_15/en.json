@@ -1,0 +1,11 @@
+{
+  "version": "0.1.15",
+  "build": 15,
+  "date": "2026-11-20",
+  "title": "Complete answers from shared links",
+  "notes": [
+    "read now detects a shared link whose last reply was still being written and, when the bridge browser is logged in, reads the original conversation instead so the full answer is returned.",
+    "When the reply is still cut off, read warns on stderr and JSON output includes \"incomplete\": true.",
+    "Installed 0.1.14 executables now report UPDATE_REQUIRED and should be re-downloaded."
+  ]
+}
