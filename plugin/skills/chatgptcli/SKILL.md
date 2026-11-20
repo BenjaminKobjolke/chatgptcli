@@ -37,6 +37,7 @@ All commands print JSON by default; use `-f text` for plain text and relay that 
 | "get / read the chatgpt chat" (current chat) | `chatgptcli.exe read -f text` |
 | "get the chat for <url or id>" | `chatgptcli.exe read <url-or-id> -f text` |
 | "read this public shared chat: <share-url>" | `chatgptcli.exe read "<share-url>" -f text` |
+| `read` prints `warning: the last reply is incomplete` / JSON `incomplete: true` | The shared snapshot was taken while ChatGPT was still answering, and the bridge account could not open the original chat. Do not retry and do not treat the partial text as the answer: tell the user the reply is cut off and ask them to re-share the link after the answer has finished (or open it while logged into the owning account). |
 | "get the deep research report" / "show the generated file" | `chatgptcli.exe read <url-or-id> -f text --files-inline` |
 | "download the images / attachments from the chat" | `chatgptcli.exe read <url-or-id> -f text --files-output "path\to\dir"` |
 | "ask chatgpt X" | `chatgptcli.exe ask "X" -f text` |
@@ -52,7 +53,8 @@ All commands print JSON by default; use `-f text` for plain text and relay that 
 Notes:
 - **If a transcript shows a prompt with no answer, or the answer only points at a report/canvas/file: do not report "no answer saved". Re-run the same `read` with `--files-inline`.** Deep research replies, canvases and generated documents live in the chat's "Files in chat" panel, not in the message stream, so a plain `read` shows the prompt alone.
 - `read` accepts a full `https://chatgpt.com/c/<id>` URL, a public `https://chatgpt.com/share/<id>` link (including query strings), or a bare id. Quote URLs for PowerShell.
-- A public shared link returns the available conversation in the normal transcript format and does not require a logged-in account. Generated sandbox files and image downloads with `--files-output` need the account access token, so on a shared link they remain markers or are omitted.
+- A public shared link returns the available conversation in the normal transcript format and does not require a logged-in account. When the share is incomplete, `read` automatically reads the owner's full chat if the bridge browser is logged into that account; images then download with `--files-output`. Generated sandbox files and image downloads otherwise need the account access token, so on a shared link they remain markers or are omitted.
+- If `read` prints `warning: the last reply is incomplete` (JSON `incomplete: true`), the available text is cut off. Do not retry and do not treat it as the answer: ask the user to re-share after the answer has finished, or open it while logged into the owning account.
 - `read` returns the whole chat regardless of length, and message text is ChatGPT's markdown source (code fences, `**bold**`, tables) — relay it as markdown. Reasoning, tool calls and citation markers are left out; only the branch currently shown is included.
 - `read` never reports an empty chat: a transcript with no messages is an error on stderr, and stdout stays empty. **Do not retry it with `--files-inline`** — that flag only changes how attachments print. Act on the message instead:
   - `AUTH_MISSING: Not logged into chatgpt.com in the bridge browser` (exit 3): run `chatgptcli.exe launch`, ask the user to log in in that browser window, then retry once.
