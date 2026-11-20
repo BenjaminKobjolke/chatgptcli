@@ -48,7 +48,9 @@ As you can see, sales rose 12%.
 
 ## Shared links
 
-Pass a public `https://chatgpt.com/share/<id>` link directly; optional query strings are accepted. The available conversation is returned in the same JSON or text transcript format as an account chat, without requiring the bridge browser to be logged in. The share is fetched without the account's cookies, so it reads the same whether or not the bridge browser is logged in. Generated sandbox files and image downloads requested with `--files-output` need the account's access token, so on a shared link they remain markers or are omitted.
+Pass a public `https://chatgpt.com/share/<id>` link directly; optional query strings are accepted. The available conversation is returned in the same JSON or text transcript format as an account chat, without requiring the bridge browser to be logged in. The share is fetched without the account's cookies, so it reads the same whether or not the bridge browser is logged in. When the last reply in the share is still `in_progress` and the share names its original conversation, `read` automatically tries to fetch that owner's chat in the logged-in bridge account and uses it when available. This also makes account-backed image downloads with `--files-output` available.
+
+If the final conversation is still incomplete, `read` writes `warning: the last reply is incomplete` and an explanation to stderr. JSON output includes `"incomplete": true`; text output stays unchanged. Treat the transcript as cut off and re-share after the answer has finished.
 
 If the share is deleted or no longer public, `read` reports `API_ERROR: No messages found on this shared ChatGPT link`. Open the link in a browser to check that it is still available and shared.
 
